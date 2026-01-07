@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crazy 8s</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div id="game-container">
+        <!-- Dashboard / Header -->
+        <header class="game-header">
+            <h1>Crazy 8s</h1>
+            <div class="status-board">
+                <a href="rules.html" class="rules-btn">Rules</a>
+                <span id="turn-indicator">Player's Turn</span>
+                <button id="restart-btn" class="hidden">New Game</button>
+            </div>
+        </header>
+
+        <!-- Opponent Area (Top) -->
+        <div id="opponent-area" class="player-area">
+            <div class="player-info">
+                <div class="avatar robot">🤖</div>
+                <div class="details">
+                    <span class="name">Bot</span>
+                    <span class="card-count">Cards: <span id="opponent-card-count">0</span></span>
+                </div>
+            </div>
+            <div id="opponent-hand" class="hand"></div>
+        </div>
+
+        <!-- Center Table (Deck & Discard) -->
+        <div id="table-area">
+            <div class="deck-area">
+                <div id="draw-pile" class="card-stack">
+                    <div class="card-back"></div>
+                </div>
+                <!-- Draw Feedback message -->
+                <div id="message-area"></div>
+            </div>
+
+            <div class="discard-area">
+                <div id="discard-pile" class="card-stack">
+                    <!-- Top card goes here -->
+                </div>
+                <div id="suit-indicator" class="hidden">
+                    Current Suit: <span id="current-suit-display"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Player Area (Bottom) -->
+        <div id="player-area" class="player-area">
+            <div id="player-hand" class="hand"></div>
+            <div class="player-info">
+                <div class="avatar human">👤</div>
+                <div class="details">
+                    <span class="name">You</span>
+                    <span class="card-count">Cards: <span id="player-card-count">0</span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Suit Selection Modal -->
+    <div id="suit-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Pick a Suit</h2>
+            <div class="suit-options">
+                <button class="suit-btn red" data-suit="hearts">♥ Hearts</button>
+                <button class="suit-btn red" data-suit="diamonds">♦ Diamonds</button>
+                <button class="suit-btn black" data-suit="clubs">♣ Clubs</button>
+                <button class="suit-btn black" data-suit="spades">♠ Spades</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="game-over-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="winner-text">You Win!</h2>
+            <button id="play-again-btn">Play Again</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

@@ -492,3 +492,146 @@ body {
     background: rgba(255, 255, 255, 0.1);
     border-color: white;
 }
+
+/* Multiplayer / Setup Styles */
+.setup-section {
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+.setup-section label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: var(--accent-color);
+}
+
+.setup-section input[type="number"] {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 1rem;
+    box-sizing: border-box;
+}
+
+.setup-hint {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 20px;
+}
+
+.small-text {
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+
+#start-game-btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--accent-color);
+    background-color: #ffd700;
+    border: none;
+    border-radius: 25px;
+    font-size: 1.1rem;
+    font-weight: bold;
+    cursor: pointer;
+    color: #333;
+}
+
+#start-game-btn:hover {
+    background-color: #ffca28;
+}
+
+/* Opponent Layout */
+#opponents-container {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    padding: 10px;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.opponent-card {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 10px 15px;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 80px;
+    transition: all 0.3s;
+    border: 2px solid transparent;
+}
+
+.opponent-card.active-turn {
+    border-color: var(--accent-color);
+    background: rgba(255, 215, 0, 0.1);
+    transform: scale(1.05);
+}
+
+.opponent-card .avatar {
+    font-size: 2rem;
+    margin-bottom: 5px;
+}
+
+.opponent-card .name {
+    font-weight: bold;
+    font-size: 0.9rem;
+    margin-bottom: 5px;
+    color: white;
+}
+
+.opponent-card .card-count {
+    font-size: 0.8rem;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+/* Adjustments for multiple opponents */
+.opponent-hand-mini {
+    display: flex;
+    margin-top: 5px;
+}
+
+.mini-card-back {
+    width: 20px;
+    height: 30px;
+    background: #1565c0;
+    border: 1px solid white;
+    border-radius: 3px;
+    margin-left: -15px;
+}
+
+/* Game Mode Buttons */
+.mode-options {
+    display: flex;
+    gap: 10px;
+}
+
+.mode-btn {
+    flex: 1;
+    padding: 10px;
+    background: transparent;
+    border: 2px solid #ccc;
+    border-radius: 8px;
+    color: #ccc;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+.mode-btn:hover {
+    border-color: white;
+    color: white;
+}
+
+.mode-btn.selected {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: #333;
+}

@@ -116,14 +116,14 @@ class Game {
 
         // Online Buttons
         this.dom.landingCreateBtn.addEventListener('click', () => {
-            this.ensureSocketConnection();
+            if (!this.ensureSocketConnection()) return;
             const name = this.dom.landingPlayerName.value || "Player";
             const count = parseInt(this.dom.landingPlayerCount.value) || 2;
             this.socket.emit('createRoom', { name, maxPlayers: count });
         });
 
         this.dom.landingJoinBtn.addEventListener('click', () => {
-            this.ensureSocketConnection();
+            if (!this.ensureSocketConnection()) return;
             const name = this.dom.landingPlayerName.value || "Player";
             const roomId = this.dom.landingRoomInput.value.trim();
             if (roomId) this.socket.emit('joinRoom', { roomId, name });
@@ -169,13 +169,30 @@ class Game {
     }
 
     ensureSocketConnection() {
-        if (!this.socket && window.io) {
+        if (this.socket) return true;
+        if (window.io) {
             this.initSocket();
+            return true;
         }
+        alert("Online play unavailable: Cannot connect to game server.\n\nPlease check your internet connection or try again later.");
+        console.error("Socket.io client library not loaded. window.io is undefined.");
+        return false;
     }
 
     initSocket() {
-        this.socket = io();
+        // Connect to the Render backend explicitly
+        // If we are on localhost, we can still use the render backend or localhost:3000
+        // But since the user wants to focus on "live", we point to the live server.
+        // We can check window.location.hostname to decide.
+
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        // USE YOUR ACTUAL BACKEND URL HERE
+        const backendUrl = isLocal ? 'http://localhost:3000' : 'https://crazy-8-game.onrender.com';
+
+        console.log("Connecting to game server at:", backendUrl);
+        this.socket = io(backendUrl, {
+            transports: ['websocket', 'polling']
+        });
 
         this.socket.on('roomCreated', (id) => {
             this.roomId = id;

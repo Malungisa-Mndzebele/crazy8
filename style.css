@@ -645,6 +645,14 @@ body {
     color: #333;
 }
 
+.flying-card {
+    position: fixed;
+    z-index: 9999;
+    transition: all 0.6s ease-in-out;
+    pointer-events: none;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+
 /* Landing Page Overhaul */
 .landing-page {
     position: fixed;

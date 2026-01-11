@@ -53,11 +53,22 @@ class Deck {
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    socket.on('createRoom', (name) => {
+    socket.on('createRoom', (data) => {
+        let name = "Player";
+        let maxPlayers = 7;
+
+        if (typeof data === 'string') {
+            name = data; // Backward compat
+        } else if (typeof data === 'object') {
+            name = data.name || "Player";
+            maxPlayers = data.maxPlayers || 7;
+        }
+
         const roomId = Math.random().toString(36).substring(7);
         rooms[roomId] = {
             id: roomId,
             players: [{ id: socket.id, name: name, hand: [] }],
+            maxPlayers: maxPlayers,
             deck: new Deck(),
             discardPile: [],
             currentTurn: 0,
@@ -72,15 +83,16 @@ io.on('connection', (socket) => {
     });
 
     socket.on('joinRoom', ({ roomId, name }) => {
-        if (rooms[roomId] && !rooms[roomId].gameStarted) {
-            if (rooms[roomId].players.length >= 7) {
+        const room = rooms[roomId];
+        if (room && !room.gameStarted) {
+            if (room.players.length >= (room.maxPlayers || 7)) {
                 socket.emit('error', 'Room full');
                 return;
             }
-            rooms[roomId].players.push({ id: socket.id, name: name, hand: [] });
+            room.players.push({ id: socket.id, name: name, hand: [] });
             socket.join(roomId);
             socket.emit('joinedRoom', roomId);
-            io.to(roomId).emit('playerList', rooms[roomId].players);
+            io.to(roomId).emit('playerList', room.players);
         } else {
             socket.emit('error', 'Room not found or game started');
         }

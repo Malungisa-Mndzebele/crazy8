@@ -74,6 +74,7 @@ class Game {
             startOnlineBtn: document.getElementById('start-online-game-btn'),
 
             landingPlayerName: document.getElementById('landing-player-name'),
+            landingPlayerCount: document.getElementById('landing-player-count'),
             landingRoomInput: document.getElementById('landing-room-input'),
 
             displayRoomId: document.getElementById('display-room-id'),
@@ -109,8 +110,8 @@ class Game {
         // PVE Start
         this.dom.landingPveBtn.addEventListener('click', () => {
             const name = this.dom.landingPlayerName.value || "Player";
-            // Default to 2 players for simplicity in this new UI
-            this.startPVE(2, name);
+            const count = parseInt(this.dom.landingPlayerCount.value) || 2;
+            this.startPVE(count, name);
         });
 
         // Online Buttons
@@ -119,7 +120,8 @@ class Game {
             // Allow a small delay for connection
             setTimeout(() => {
                 const name = this.dom.landingPlayerName.value || "Player";
-                if (this.socket) this.socket.emit('createRoom', name);
+                const count = parseInt(this.dom.landingPlayerCount.value) || 2;
+                if (this.socket) this.socket.emit('createRoom', { name, maxPlayers: count });
             }, 100);
         });
 
@@ -314,10 +316,20 @@ class Game {
                 const el = this.createCardElement(card);
                 el.dataset.index = index;
                 el.onclick = () => {
+                    const cardEl = this.dom.playerHand.children[index];
                     if (this.gameMode === 'pve') {
                         if (this.currentTurn === 0 && !this.gameOver) this.attemptPlayPVE(index);
                     } else {
-                        this.socket.emit('playCard', { roomId: this.roomId, cardIndex: index });
+                        // Optimistic animation for Online
+                        // We assume it's valid for visual feedback, server validates real logic.
+                        // We check basic turn/card validity locally to avoid silly animations.
+                        // Simplified check: is it my turn?
+                        const isMyTurn = (this.players[this.currentTurn].id === this.myPlayerId);
+                        if (isMyTurn && !this.gameOver) {
+                            this.animatePlayCard(cardEl, () => {
+                                this.socket.emit('playCard', { roomId: this.roomId, cardIndex: index });
+                            });
+                        }
                     }
                 };
                 this.dom.playerHand.appendChild(el);
@@ -401,11 +413,59 @@ class Game {
         const card = player.hand[cardIndex];
 
         if (this.isValidMovePVE(card)) {
-            player.hand.splice(cardIndex, 1);
-            this.playCardHelperPVE(card, 0);
+            const cardEl = this.dom.playerHand.children[cardIndex];
+
+            // Animation
+            this.animatePlayCard(cardEl, () => {
+                player.hand.splice(cardIndex, 1);
+                this.playCardHelperPVE(card, 0);
+            });
+
         } else {
             // Shake logic
+            const cardEl = this.dom.playerHand.children[cardIndex];
+            cardEl.classList.add('shake');
+            setTimeout(() => cardEl.classList.remove('shake'), 500);
         }
+    }
+
+    animatePlayCard(startEl, callback) {
+        if (!startEl) {
+            callback();
+            return;
+        }
+
+        const rect = startEl.getBoundingClientRect();
+        const targetRect = this.dom.discardPile.getBoundingClientRect();
+
+        // Create Flying Clone
+        const clone = startEl.cloneNode(true);
+        clone.classList.add('flying-card');
+        clone.style.left = `${rect.left}px`;
+        clone.style.top = `${rect.top}px`;
+        clone.style.width = `${rect.width}px`;
+        clone.style.height = `${rect.height}px`;
+        clone.style.transform = 'none'; // Reset any hover transforms
+
+        document.body.appendChild(clone);
+
+        // Hide original immediately
+        startEl.style.opacity = '0';
+
+        // Animate
+        // Force reflow
+        clone.offsetHeight;
+
+        // Calculate center delta
+        const deltaX = (targetRect.left + targetRect.width / 2) - (rect.left + rect.width / 2);
+        const deltaY = (targetRect.top + targetRect.height / 2) - (rect.top + rect.height / 2);
+
+        clone.style.transform = `translate(${deltaX}px, ${deltaY}px) rotate(360deg) scale(1.0)`;
+
+        setTimeout(() => {
+            clone.remove();
+            callback();
+        }, 600); // Match CSS transition time
     }
 
     isValidMovePVE(card) {

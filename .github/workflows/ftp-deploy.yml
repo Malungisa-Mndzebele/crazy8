@@ -1,0 +1,28 @@
+name: Deploy via FTP
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  web-deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get latest code
+        uses: actions/checkout@v4
+      
+      - name: Sync files
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: server28.shared.spaceship.host
+          username: crazy8@khasinogaming.com
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: 21
+          # Uploads the entire repository content
+          # You can specify 'exclude' to ignore unrelated files like .git, etc.
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**

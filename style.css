@@ -1,17 +1,26 @@
 :root {
-    --bg-color: #2e7d32;
-    --bg-gradient: radial-gradient(circle at center, #388e3c, #1b5e20);
+    --bg-color: #1b5e20;
+    --bg-gradient: radial-gradient(circle at center, rgb(34, 139, 74) 0%, rgb(20, 85, 48) 100%);
     --card-width: 100px;
     --card-height: 140px;
     --card-radius: 10px;
     --primary-color: #fff;
     --text-color: #333;
-    --accent-color: #ffd700;
+    --accent-color: rgb(212, 175, 55);
+    /* Gold */
+    --primary-btn-color: rgb(37, 99, 235);
+    /* Blue */
+    --utility-btn-gradient: linear-gradient(135deg, rgb(79, 70, 229), rgb(124, 58, 237));
+    /* Purple Gradient */
+    --input-bg: rgb(30, 41, 59);
+    --input-border: rgb(51, 65, 85);
+    --landing-container-bg: rgba(20, 85, 48, 0.85);
     --glass-bg: rgba(255, 255, 255, 0.1);
     --glass-border: rgba(255, 255, 255, 0.2);
     --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.1);
     --shadow-md: 0 8px 15px rgba(0, 0, 0, 0.2);
-    --font-main: 'Outfit', sans-serif;
+    --shadow-btn: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    --font-main: 'Outfit', system-ui, sans-serif;
 }
 
 body {
@@ -634,4 +643,190 @@ body {
     background: var(--accent-color);
     border-color: var(--accent-color);
     color: #333;
+}
+
+/* Landing Page Overhaul */
+.landing-page {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-gradient);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+}
+
+.landing-page.hidden {
+    display: none !important;
+}
+
+.landing-card {
+    background: var(--landing-container-bg);
+    padding: 2.5rem;
+    border-radius: 20px;
+    width: 100%;
+    max-width: 450px;
+    text-align: center;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.landing-header {
+    margin-bottom: 2rem;
+    position: relative;
+}
+
+.landing-title {
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: var(--accent-color);
+    margin: 0 0 0.5rem 0;
+    letter-spacing: -0.025em;
+    text-transform: uppercase;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.landing-tagline {
+    color: #cbd5e1;
+    font-size: 0.95rem;
+    margin: 0 0 1.5rem 0;
+}
+
+.utility-btn {
+    display: inline-block;
+    background: var(--utility-btn-gradient);
+    color: white;
+    padding: 0.5rem 1.25rem;
+    border-radius: 9999px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-decoration: none;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: none;
+    cursor: pointer;
+}
+
+.utility-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+}
+
+.landing-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.landing-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    text-align: left;
+}
+
+.landing-label {
+    color: #e2e8f0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-left: 0.25rem;
+}
+
+.landing-input {
+    width: 100%;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    color: white;
+    padding: 0.75rem 1rem;
+    border-radius: 0.75rem;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+}
+
+.landing-input:focus {
+    border-color: var(--primary-btn-color);
+}
+
+.action-buttons-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.primary-btn {
+    width: 100%;
+    background: var(--primary-btn-color);
+    color: white;
+    padding: 0.875rem;
+    border-radius: 0.75rem;
+    font-weight: 600;
+    font-size: 1rem;
+    border: none;
+    cursor: pointer;
+    box-shadow: var(--shadow-btn);
+    transition: all 0.2s;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.primary-btn:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+}
+
+.primary-btn.secondary-style {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: none;
+}
+
+.primary-btn.secondary-style:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.divider {
+    display: flex;
+    align-items: center;
+    color: #94a3b8;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin: 0.5rem 0;
+}
+
+.divider::before,
+.divider::after {
+    content: "";
+    flex: 1;
+    border-bottom: 1px solid #334155;
+}
+
+.divider::before {
+    margin-right: 1rem;
+}
+
+.divider::after {
+    margin-left: 1rem;
+}
+
+.join-row {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.join-row .landing-input {
+    flex: 1;
+}
+
+.join-row .primary-btn {
+    width: auto;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
 }

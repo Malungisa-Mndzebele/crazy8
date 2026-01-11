@@ -64,24 +64,18 @@ class Game {
 
         // DOM Elements
         this.dom = {
-            setupModal: document.getElementById('setup-modal'),
+            landingPage: document.getElementById('landing-page'),
             waitingRoomModal: document.getElementById('waiting-room-modal'),
-            startBtn: document.getElementById('start-game-btn'),
-            createRoomBtn: document.getElementById('create-room-btn'),
-            joinRoomBtn: document.getElementById('join-room-btn'),
+
+            landingCreateBtn: document.getElementById('landing-create-btn'),
+            landingJoinBtn: document.getElementById('landing-join-btn'),
+            landingPveBtn: document.getElementById('landing-pve-btn'),
+
             startOnlineBtn: document.getElementById('start-online-game-btn'),
 
-            pveControls: document.getElementById('pve-controls'),
-            onlineControls: document.getElementById('online-controls'),
-            lobbyBtns: document.getElementById('lobby-btns'),
-            lobbyStatus: document.getElementById('lobby-status'),
+            landingPlayerName: document.getElementById('landing-player-name'),
+            landingRoomInput: document.getElementById('landing-room-input'),
 
-            playerCountInput: document.getElementById('player-count-input'),
-            bgModeBtns: document.querySelectorAll('.mode-btn'),
-            setupDescription: document.getElementById('setup-description'),
-
-            playerNameInput: document.getElementById('player-name-input'),
-            roomIdInput: document.getElementById('room-id-input'),
             displayRoomId: document.getElementById('display-room-id'),
             playerListDisplay: document.getElementById('player-list-display'),
 
@@ -108,52 +102,34 @@ class Game {
         };
 
         this.bindEvents();
-        this.dom.setupModal.classList.remove('hidden');
+        // Landing page is visible by default via CSS options
     }
 
     bindEvents() {
-        // Mode Selection
-        this.dom.bgModeBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                this.dom.bgModeBtns.forEach(b => b.classList.remove('selected'));
-                btn.classList.add('selected');
-                this.gameMode = btn.dataset.mode;
-
-                if (this.gameMode === 'pve') {
-                    this.dom.pveControls.classList.remove('hidden');
-                    this.dom.onlineControls.classList.add('hidden');
-                    this.dom.startBtn.classList.remove('hidden');
-                    this.dom.lobbyBtns.classList.add('hidden');
-                    this.dom.setupDescription.textContent = "Play against computer opponents.";
-                } else {
-                    this.dom.pveControls.classList.add('hidden');
-                    this.dom.onlineControls.classList.remove('hidden');
-                    this.dom.startBtn.classList.add('hidden');
-                    this.dom.lobbyBtns.classList.remove('hidden');
-                    this.dom.setupDescription.textContent = "Create or Join an online room.";
-
-                    if (!this.socket && window.io) {
-                        this.initSocket();
-                    }
-                }
-            });
-        });
-
-        this.dom.startBtn.addEventListener('click', () => {
-            const count = parseInt(this.dom.playerCountInput.value);
-            this.startPVE(count);
+        // PVE Start
+        this.dom.landingPveBtn.addEventListener('click', () => {
+            const name = this.dom.landingPlayerName.value || "Player";
+            // Default to 2 players for simplicity in this new UI
+            this.startPVE(2, name);
         });
 
         // Online Buttons
-        this.dom.createRoomBtn.addEventListener('click', () => {
-            const name = this.dom.playerNameInput.value || "Player";
-            if (this.socket) this.socket.emit('createRoom', name);
+        this.dom.landingCreateBtn.addEventListener('click', () => {
+            if (!this.socket && window.io) this.initSocket();
+            // Allow a small delay for connection
+            setTimeout(() => {
+                const name = this.dom.landingPlayerName.value || "Player";
+                if (this.socket) this.socket.emit('createRoom', name);
+            }, 100);
         });
 
-        this.dom.joinRoomBtn.addEventListener('click', () => {
-            const name = this.dom.playerNameInput.value || "Player";
-            const roomId = this.dom.roomIdInput.value.trim();
-            if (this.socket && roomId) this.socket.emit('joinRoom', { roomId, name });
+        this.dom.landingJoinBtn.addEventListener('click', () => {
+            if (!this.socket && window.io) this.initSocket();
+            setTimeout(() => {
+                const name = this.dom.landingPlayerName.value || "Player";
+                const roomId = this.dom.landingRoomInput.value.trim();
+                if (this.socket && roomId) this.socket.emit('joinRoom', { roomId, name });
+            }, 100);
         });
 
         this.dom.startOnlineBtn.addEventListener('click', () => {
@@ -220,7 +196,7 @@ class Game {
 
         this.socket.on('gameStarted', () => {
             this.dom.waitingRoomModal.classList.add('hidden');
-            this.dom.setupModal.classList.add('hidden');
+            this.dom.landingPage.classList.add('hidden');
         });
 
         this.socket.on('gameState', (state) => {
@@ -234,17 +210,17 @@ class Game {
     }
 
     enterWaitingRoom() {
-        this.dom.setupModal.classList.add('hidden');
+        this.dom.landingPage.classList.add('hidden');
         this.dom.waitingRoomModal.classList.remove('hidden');
         this.dom.displayRoomId.textContent = this.roomId;
     }
 
     // --- PVE Logic ---
 
-    startPVE(totalPlayers) {
+    startPVE(totalPlayers, playerName) {
         this.gameMode = 'pve';
         this.gameOver = false;
-        this.dom.setupModal.classList.add('hidden');
+        this.dom.landingPage.classList.add('hidden');
         this.deck.reset();
         this.players = [];
         this.discardPile = [];
@@ -253,7 +229,7 @@ class Game {
         this.direction = 1;
         this.drawPenalty = 0;
 
-        this.players.push(new Player('You', 'human'));
+        this.players.push(new Player(playerName || 'You', 'human'));
         const botNames = [...BOT_NAMES].sort(() => 0.5 - Math.random());
         for (let i = 1; i < totalPlayers; i++) {
             this.players.push(new Player(botNames[i - 1] || `Bot ${i}`, 'bot'));

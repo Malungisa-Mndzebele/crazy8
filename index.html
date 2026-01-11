@@ -21,46 +21,40 @@
             </div>
         </header>
 
-        <!-- Game Setup Modal -->
-        <div id="setup-modal" class="modal">
-            <div class="modal-content">
-                <h2>Game Setup</h2>
-
-                <div class="setup-section">
-                    <label>Game Mode:</label>
-                    <div class="mode-options">
-                        <button class="mode-btn selected" data-mode="pve">vs Computer</button>
-                        <button class="mode-btn" data-mode="online">Online</button>
-                    </div>
+        <!-- New Landing Page / Lobby -->
+        <div id="landing-page" class="landing-page">
+            <div class="landing-card">
+                <div class="landing-header">
+                    <a href="rules.html" class="utility-btn">How to Play</a>
+                    <h1 class="landing-title">Crazy 8s</h1>
+                    <p class="landing-tagline">Create or join a game room to play with friends online.</p>
                 </div>
 
-                <!-- PVE Controls -->
-                <div id="pve-controls">
-                    <div class="setup-section">
-                        <label>Total Players (2-7):</label>
-                        <input type="number" id="player-count-input" min="2" max="7" value="2">
-                    </div>
-                </div>
+                <div class="landing-body">
+                    <div class="landing-section">
+                        <label class="landing-label">Your Name</label>
+                        <input type="text" id="landing-player-name" class="landing-input" placeholder="Enter your name"
+                            value="Player 1">
 
-                <!-- Online Controls -->
-                <div id="online-controls" class="hidden">
-                    <div class="setup-section">
-                        <label>Your Name:</label>
-                        <input type="text" id="player-name-input" placeholder="Player Name" value="Player 1">
+                        <div class="action-buttons-stack">
+                            <button id="landing-create-btn" class="primary-btn">
+                                <span>🎲</span> Create New Room
+                            </button>
+                            <button id="landing-pve-btn" class="primary-btn secondary-style">
+                                <span>🤖</span> Play vs Computer
+                            </button>
+                        </div>
                     </div>
-                    <div class="setup-section">
-                        <label>Room ID (to Join):</label>
-                        <input type="text" id="room-id-input" placeholder="Leave empty to Create New">
+
+                    <div class="divider">OR</div>
+
+                    <div class="landing-section">
+                        <label class="landing-label">Join Existing Game</label>
+                        <div class="join-row">
+                            <input type="text" id="landing-room-input" class="landing-input" placeholder="Room Code">
+                            <button id="landing-join-btn" class="primary-btn">Join</button>
+                        </div>
                     </div>
-                    <p class="status-msg" id="lobby-status"></p>
-                </div>
-
-                <p class="setup-hint" id="setup-description">Play against computer opponents.</p>
-
-                <button id="start-game-btn">Start Game</button>
-                <div id="lobby-btns" class="hidden">
-                    <button id="create-room-btn">Create Room</button>
-                    <button id="join-room-btn">Join Room</button>
                 </div>
             </div>
         </div>

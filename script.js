@@ -116,22 +116,17 @@ class Game {
 
         // Online Buttons
         this.dom.landingCreateBtn.addEventListener('click', () => {
-            if (!this.socket && window.io) this.initSocket();
-            // Allow a small delay for connection
-            setTimeout(() => {
-                const name = this.dom.landingPlayerName.value || "Player";
-                const count = parseInt(this.dom.landingPlayerCount.value) || 2;
-                if (this.socket) this.socket.emit('createRoom', { name, maxPlayers: count });
-            }, 100);
+            this.ensureSocketConnection();
+            const name = this.dom.landingPlayerName.value || "Player";
+            const count = parseInt(this.dom.landingPlayerCount.value) || 2;
+            this.socket.emit('createRoom', { name, maxPlayers: count });
         });
 
         this.dom.landingJoinBtn.addEventListener('click', () => {
-            if (!this.socket && window.io) this.initSocket();
-            setTimeout(() => {
-                const name = this.dom.landingPlayerName.value || "Player";
-                const roomId = this.dom.landingRoomInput.value.trim();
-                if (this.socket && roomId) this.socket.emit('joinRoom', { roomId, name });
-            }, 100);
+            this.ensureSocketConnection();
+            const name = this.dom.landingPlayerName.value || "Player";
+            const roomId = this.dom.landingRoomInput.value.trim();
+            if (roomId) this.socket.emit('joinRoom', { roomId, name });
         });
 
         this.dom.startOnlineBtn.addEventListener('click', () => {
@@ -171,6 +166,12 @@ class Game {
         this.dom.restartBtn.addEventListener('click', () => {
             window.location.reload();
         });
+    }
+
+    ensureSocketConnection() {
+        if (!this.socket && window.io) {
+            this.initSocket();
+        }
     }
 
     initSocket() {

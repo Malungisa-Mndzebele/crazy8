@@ -1,4 +1,4 @@
-console.log("Crazy 8 Client v2.0 Loaded - Connecting to Render");
+console.log("Crazy 8 Client v2.1 Loaded - Connecting to Render");
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const SYMBOLS = { 'hearts': '♥', 'diamonds': '♦', 'clubs': '♣', 'spades': '♠' };
@@ -187,8 +187,8 @@ class Game {
         // We can check window.location.hostname to decide.
 
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        // USE YOUR ACTUAL BACKEND URL HERE
-        const backendUrl = isLocal ? 'http://localhost:3001' : 'https://crazy-8-game.onrender.com';
+        // Production backend on Render
+        const backendUrl = isLocal ? 'http://localhost:3001' : 'https://crazy-8-game-g9ju.onrender.com';
 
         console.log("Connecting to game server at:", backendUrl);
         this.socket = io(backendUrl, {

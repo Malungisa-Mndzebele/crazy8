@@ -19,8 +19,8 @@ app.get('/health', (req, res) => {
     res.send('Crazy 8 Backend v2.0 Running');
 });
 
-// Serve static files
-app.use(express.static(__dirname));
+// Static files are served from khasinogaming.com, not from this backend.
+// app.use(express.static(__dirname));
 
 // Game Constants
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];

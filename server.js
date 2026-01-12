@@ -7,7 +7,10 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: ["https://khasinogaming.com", "http://localhost:3000", "http://localhost:5500", "http://127.0.0.1:5500"],
+        origin: (origin, callback) => {
+            // Allow all origins for now to fix connection issues
+            callback(null, true);
+        },
         methods: ["GET", "POST"],
         credentials: true
     }

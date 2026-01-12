@@ -6,10 +6,15 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
+    transports: ['websocket', 'polling'],
     cors: {
         origin: "*",
         methods: ["GET", "POST"]
     }
+});
+
+app.get('/health', (req, res) => {
+    res.send('Crazy 8 Backend v1.9 Running');
 });
 
 // Serve static files

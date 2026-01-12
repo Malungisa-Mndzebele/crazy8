@@ -1,4 +1,4 @@
-console.log("Crazy 8 Client v2.1 Loaded - Connecting to Render");
+console.log("Crazy 8 Client v2.2 Loaded - Connecting to Render");
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const SYMBOLS = { 'hearts': '♥', 'diamonds': '♦', 'clubs': '♣', 'spades': '♠' };
@@ -216,6 +216,7 @@ class Game {
         });
 
         this.socket.on('gameStarted', () => {
+            this.gameMode = 'online'; // Important: Set to online mode for correct player perspective
             this.dom.waitingRoomModal.classList.add('hidden');
             this.dom.landingPage.classList.add('hidden');
         });

@@ -19,12 +19,8 @@ app.get('/health', (req, res) => {
     res.send('Crazy 8 Backend v2.0 Running');
 });
 
-app.get('/', (req, res) => {
-    res.send('Crazy 8 Backend v2.0 - Static Files Disabled');
-});
-
-// Serve static files - DISABLED FOR DEBUGGING
-// app.use(express.static(__dirname));
+// Serve static files
+app.use(express.static(__dirname));
 
 // Game Constants
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];

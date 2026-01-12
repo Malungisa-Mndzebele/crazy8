@@ -1,9 +1,21 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
 const path = require('path');
+const connectDB = require('./config/db');
+const Player = require('./models/Player');
+const Game = require('./models/Game');
 
-console.log("Starting Crazy 8 Server v2.0...");
+console.log("Starting Crazy 8 Server v2.3...");
+
+// Database connection flag
+let dbConnected = false;
+
+// Connect to MongoDB
+(async () => {
+    dbConnected = await connectDB();
+})();
 
 const app = express();
 const server = http.createServer(app);
@@ -15,8 +27,25 @@ const io = new Server(server, {
     }
 });
 
+// Health check with DB status
 app.get('/health', (req, res) => {
-    res.send('Crazy 8 Backend v2.0 Running');
+    res.json({
+        status: 'Crazy 8 Backend v2.3 Running',
+        database: dbConnected ? 'connected' : 'not connected (in-memory mode)'
+    });
+});
+
+// Leaderboard API endpoint
+app.get('/api/leaderboard', async (req, res) => {
+    if (!dbConnected) {
+        return res.json({ error: 'Database not connected', leaderboard: [] });
+    }
+    try {
+        const leaderboard = await Game.getLeaderboard(10);
+        res.json({ leaderboard });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Static files are served from khasinogaming.com, not from this backend.
@@ -26,7 +55,7 @@ app.get('/health', (req, res) => {
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 
-// Rooms State
+// Rooms State (in-memory, with optional DB persistence)
 const rooms = {};
 
 class Card {
@@ -151,6 +180,14 @@ io.on('connection', (socket) => {
             // Check Win
             if (player.hand.length === 0) {
                 io.to(roomId).emit('gameOver', { winner: player.name });
+
+                // Save game to database if connected
+                if (dbConnected) {
+                    saveGameResult(room, player.name).catch(err =>
+                        console.error('Error saving game:', err.message)
+                    );
+                }
+
                 delete rooms[roomId];
                 return;
             }
@@ -304,6 +341,55 @@ function sanitizeState(room) {
         gameForcedSuit: room.gameForcedSuit,
         drawPenalty: room.drawPenalty
     };
+}
+
+// Save game result to database
+async function saveGameResult(room, winnerName) {
+    try {
+        const gameData = {
+            roomId: room.id,
+            status: 'completed',
+            players: room.players.map((p, idx) => ({
+                odId: p.id,
+                name: p.name,
+                isHost: idx === 0,
+                finalHandSize: p.hand.length
+            })),
+            maxPlayers: room.maxPlayers,
+            winner: {
+                name: winnerName
+            },
+            startedAt: room.startedAt || new Date(),
+            endedAt: new Date()
+        };
+
+        const game = new Game(gameData);
+        await game.save();
+        console.log(`📊 Game ${room.id} saved to database. Winner: ${winnerName}`);
+    } catch (error) {
+        console.error('Failed to save game:', error.message);
+    }
+}
+
+// Get or create player in database
+async function getOrCreatePlayer(name) {
+    if (!dbConnected) return null;
+
+    try {
+        let player = await Player.findOne({ username: name });
+        if (!player) {
+            player = new Player({
+                username: name,
+                isGuest: true
+            });
+            await player.save();
+            console.log(`👤 New guest player created: ${name}`);
+        }
+        return player;
+    } catch (error) {
+        console.error('Error with player lookup:', error.message);
+        return null;
+    }
 }
 
 const PORT = process.env.PORT || 3001;

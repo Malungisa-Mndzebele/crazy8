@@ -187,7 +187,7 @@ class Game {
 
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         // USE YOUR ACTUAL BACKEND URL HERE
-        const backendUrl = isLocal ? 'http://localhost:3000' : 'https://crazy-8-game.onrender.com';
+        const backendUrl = isLocal ? 'http://localhost:3001' : 'https://crazy-8-game.onrender.com';
 
         console.log("Connecting to game server at:", backendUrl);
         this.socket = io(backendUrl, {

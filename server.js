@@ -150,6 +150,49 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Quick Match - Find or create an available room
+    socket.on('quickMatch', ({ name }) => {
+        name = name || "Player";
+
+        // Find an available room (not started, not full)
+        let availableRoom = null;
+        for (const roomId in rooms) {
+            const room = rooms[roomId];
+            if (!room.gameStarted && room.players.length < room.maxPlayers) {
+                availableRoom = room;
+                break;
+            }
+        }
+
+        if (availableRoom) {
+            // Join the available room
+            availableRoom.players.push({ id: socket.id, name: name, hand: [] });
+            socket.join(availableRoom.id);
+            socket.emit('joinedRoom', availableRoom.id);
+            io.to(availableRoom.id).emit('playerList', availableRoom.players);
+            console.log(`⚡ Quick Match: ${name} joined room ${availableRoom.id}`);
+        } else {
+            // No available rooms - create a new one
+            const roomId = Math.random().toString(36).substring(7);
+            rooms[roomId] = {
+                id: roomId,
+                players: [{ id: socket.id, name: name, hand: [] }],
+                maxPlayers: 4, // Default max for quick match
+                deck: new Deck(),
+                discardPile: [],
+                currentTurn: 0,
+                direction: 1,
+                drawPenalty: 0,
+                gameStarted: false,
+                gameForcedSuit: null
+            };
+            socket.join(roomId);
+            socket.emit('roomCreated', roomId);
+            io.to(roomId).emit('playerList', rooms[roomId].players);
+            console.log(`⚡ Quick Match: ${name} created new room ${roomId}`);
+        }
+    });
+
     socket.on('startGame', (roomId) => {
         const room = rooms[roomId];
         if (room && room.players[0].id === socket.id) {

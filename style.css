@@ -838,3 +838,21 @@ body {
     padding-left: 1.5rem;
     padding-right: 1.5rem;
 }
+
+/* Quick Match Button */
+.primary-btn.quickmatch-style {
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    font-size: 1.1rem;
+    padding: 1rem;
+}
+
+.primary-btn.quickmatch-style:hover {
+    background: linear-gradient(135deg, #fbbf24, #f87171);
+}
+
+.quickmatch-hint {
+    color: #94a3b8;
+    font-size: 0.8rem;
+    margin: 0;
+    text-align: center;
+}

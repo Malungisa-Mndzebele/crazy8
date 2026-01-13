@@ -1,4 +1,4 @@
-console.log("Crazy 8 Client v2.2 Loaded - Connecting to Render");
+console.log("Crazy 8 Client v2.3 Loaded - Connecting to Render");
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const SYMBOLS = { 'hearts': '♥', 'diamonds': '♦', 'clubs': '♣', 'spades': '♠' };
@@ -71,6 +71,7 @@ class Game {
             landingCreateBtn: document.getElementById('landing-create-btn'),
             landingJoinBtn: document.getElementById('landing-join-btn'),
             landingPveBtn: document.getElementById('landing-pve-btn'),
+            landingQuickMatchBtn: document.getElementById('landing-quickmatch-btn'),
 
             startOnlineBtn: document.getElementById('start-online-game-btn'),
 
@@ -128,6 +129,13 @@ class Game {
             const name = this.dom.landingPlayerName.value || "Player";
             const roomId = this.dom.landingRoomInput.value.trim();
             if (roomId) this.socket.emit('joinRoom', { roomId, name });
+        });
+
+        // Quick Match Button
+        this.dom.landingQuickMatchBtn.addEventListener('click', () => {
+            if (!this.ensureSocketConnection()) return;
+            const name = this.dom.landingPlayerName.value || "Player";
+            this.socket.emit('quickMatch', { name });
         });
 
         this.dom.startOnlineBtn.addEventListener('click', () => {

@@ -1,4 +1,4 @@
-console.log("Crazy 8 Client v2.4 Loaded - Connecting to Render");
+console.log("Crazy 8 Client v2.5 Loaded - Connecting to Render");
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const SYMBOLS = { 'hearts': '♥', 'diamonds': '♦', 'clubs': '♣', 'spades': '♠' };
@@ -511,7 +511,7 @@ class Game {
         setTimeout(() => {
             clone.remove();
             callback();
-        }, 500); // Match CSS transition time
+        }, 1500); // Match CSS transition time
     }
 
     isValidMovePVE(card) {
@@ -530,10 +530,14 @@ class Game {
         if (card.rank === 'J') this.direction *= -1;
 
         if (this.players[playerIndex].hand.length === 0) {
-            // Win
-            this.dom.winnerText.textContent = "You Win!";
-            this.dom.gameOverModal.classList.remove('hidden');
+            // Win logic
             this.gameOver = true;
+            if (this.players[playerIndex].type === 'human') {
+                this.dom.winnerText.textContent = "You Win!";
+            } else {
+                this.dom.winnerText.textContent = `${this.players[playerIndex].name} Wins!`;
+            }
+            this.dom.gameOverModal.classList.remove('hidden');
             return;
         }
 

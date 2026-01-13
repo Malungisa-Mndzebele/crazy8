@@ -1,69 +1,134 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { getSequelize } = require('../config/db');
 
-const playerSchema = new mongoose.Schema({
-    username: {
-        type: String,
-        required: true,
-        unique: true,
-        trim: true,
-        minlength: 2,
-        maxlength: 20
-    },
-    email: {
-        type: String,
-        sparse: true,
-        trim: true,
-        lowercase: true
-    },
-    passwordHash: {
-        type: String,
-        default: null // For guest players, no password required
-    },
-    isGuest: {
-        type: Boolean,
-        default: true
-    },
-    stats: {
-        gamesPlayed: { type: Number, default: 0 },
-        gamesWon: { type: Number, default: 0 },
-        gamesLost: { type: Number, default: 0 },
-        totalCardsPlayed: { type: Number, default: 0 },
-        eightPlayed: { type: Number, default: 0 } // Special: 8s played
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    },
-    lastActiveAt: {
-        type: Date,
-        default: Date.now
-    }
-});
+let Player = null;
 
-// Virtual for win rate
-playerSchema.virtual('winRate').get(function () {
-    if (this.stats.gamesPlayed === 0) return 0;
-    return ((this.stats.gamesWon / this.stats.gamesPlayed) * 100).toFixed(1);
-});
+const initPlayerModel = () => {
+    const sequelize = getSequelize();
+    if (!sequelize) return null;
 
-// Update last active timestamp
-playerSchema.methods.updateActivity = function () {
-    this.lastActiveAt = new Date();
-    return this.save();
+    Player = sequelize.define('Player', {
+        id: {
+            type: DataTypes.INTEGER,
+            primaryKey: true,
+            autoIncrement: true
+        },
+        username: {
+            type: DataTypes.STRING(50),
+            allowNull: false,
+            unique: true
+        },
+        email: {
+            type: DataTypes.STRING(255),
+            allowNull: true
+        },
+        passwordHash: {
+            type: DataTypes.STRING(255),
+            allowNull: true
+        },
+        isGuest: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: true
+        },
+        gamesPlayed: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
+        },
+        gamesWon: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
+        },
+        gamesLost: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
+        },
+        totalCardsPlayed: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
+        },
+        eightsPlayed: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
+        },
+        lastActiveAt: {
+            type: DataTypes.DATE,
+            defaultValue: DataTypes.NOW
+        }
+    }, {
+        tableName: 'players',
+        timestamps: true // Adds createdAt, updatedAt
+    });
+
+    return Player;
 };
 
-// Increment stats after a game
-playerSchema.methods.recordGame = function (won, cardsPlayed = 0, eightsPlayed = 0) {
-    this.stats.gamesPlayed += 1;
-    if (won) {
-        this.stats.gamesWon += 1;
-    } else {
-        this.stats.gamesLost += 1;
+const getPlayerModel = () => Player;
+
+// Helper: Get or create a player
+const getOrCreatePlayer = async (username) => {
+    if (!Player) return null;
+
+    try {
+        const [player, created] = await Player.findOrCreate({
+            where: { username },
+            defaults: { isGuest: true }
+        });
+
+        if (created) {
+            console.log(`👤 New guest player created: ${username}`);
+        }
+
+        return player;
+    } catch (error) {
+        console.error('Error with player lookup:', error.message);
+        return null;
     }
-    this.stats.totalCardsPlayed += cardsPlayed;
-    this.stats.eightPlayed += eightsPlayed;
-    this.lastActiveAt = new Date();
-    return this.save();
 };
 
-module.exports = mongoose.model('Player', playerSchema);
+// Helper: Record game result for a player
+const recordGameResult = async (username, won) => {
+    if (!Player) return;
+
+    try {
+        const player = await getOrCreatePlayer(username);
+        if (player) {
+            player.gamesPlayed += 1;
+            if (won) {
+                player.gamesWon += 1;
+            } else {
+                player.gamesLost += 1;
+            }
+            player.lastActiveAt = new Date();
+            await player.save();
+        }
+    } catch (error) {
+        console.error('Error recording game result:', error.message);
+    }
+};
+
+// Get leaderboard
+const getLeaderboard = async (limit = 10) => {
+    if (!Player) return [];
+
+    try {
+        return await Player.findAll({
+            where: {
+                gamesPlayed: { [require('sequelize').Op.gt]: 0 }
+            },
+            order: [['gamesWon', 'DESC']],
+            limit,
+            attributes: ['username', 'gamesPlayed', 'gamesWon', 'gamesLost']
+        });
+    } catch (error) {
+        console.error('Error fetching leaderboard:', error.message);
+        return [];
+    }
+};
+
+module.exports = {
+    initPlayerModel,
+    getPlayerModel,
+    getOrCreatePlayer,
+    recordGameResult,
+    getLeaderboard
+};

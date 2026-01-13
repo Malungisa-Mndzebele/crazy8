@@ -3,18 +3,28 @@ const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
 const path = require('path');
-const connectDB = require('./config/db');
-const Player = require('./models/Player');
-const Game = require('./models/Game');
+const { connectDB, getSequelize, isConnected } = require('./config/db');
+const { initPlayerModel, getLeaderboard, recordGameResult } = require('./models/Player');
+const { initGameModel, saveGameResult } = require('./models/Game');
 
-console.log("Starting Crazy 8 Server v2.3...");
+console.log("Starting Crazy 8 Server v2.4...");
 
 // Database connection flag
 let dbConnected = false;
 
-// Connect to MongoDB
+// Connect to PostgreSQL and initialize models
 (async () => {
     dbConnected = await connectDB();
+    if (dbConnected) {
+        // Initialize models
+        initPlayerModel();
+        initGameModel();
+
+        // Sync tables (creates them if they don't exist)
+        const sequelize = getSequelize();
+        await sequelize.sync({ alter: true });
+        console.log('✅ Database tables synced');
+    }
 })();
 
 const app = express();
@@ -30,8 +40,8 @@ const io = new Server(server, {
 // Health check with DB status
 app.get('/health', (req, res) => {
     res.json({
-        status: 'Crazy 8 Backend v2.3 Running',
-        database: dbConnected ? 'connected' : 'not connected (in-memory mode)'
+        status: 'Crazy 8 Backend v2.4 Running',
+        database: dbConnected ? 'PostgreSQL connected' : 'not connected (in-memory mode)'
     });
 });
 
@@ -41,7 +51,7 @@ app.get('/api/leaderboard', async (req, res) => {
         return res.json({ error: 'Database not connected', leaderboard: [] });
     }
     try {
-        const leaderboard = await Game.getLeaderboard(10);
+        const leaderboard = await getLeaderboard(10);
         res.json({ leaderboard });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -57,6 +67,7 @@ const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
 
 // Rooms State (in-memory, with optional DB persistence)
 const rooms = {};
+
 
 class Card {
     constructor(suit, rank) {
@@ -183,9 +194,18 @@ io.on('connection', (socket) => {
 
                 // Save game to database if connected
                 if (dbConnected) {
+                    // Save game record
                     saveGameResult(room, player.name).catch(err =>
                         console.error('Error saving game:', err.message)
                     );
+
+                    // Update player stats
+                    room.players.forEach(p => {
+                        const won = p.name === player.name;
+                        recordGameResult(p.name, won).catch(err =>
+                            console.error('Error recording player stats:', err.message)
+                        );
+                    });
                 }
 
                 delete rooms[roomId];
@@ -341,55 +361,6 @@ function sanitizeState(room) {
         gameForcedSuit: room.gameForcedSuit,
         drawPenalty: room.drawPenalty
     };
-}
-
-// Save game result to database
-async function saveGameResult(room, winnerName) {
-    try {
-        const gameData = {
-            roomId: room.id,
-            status: 'completed',
-            players: room.players.map((p, idx) => ({
-                odId: p.id,
-                name: p.name,
-                isHost: idx === 0,
-                finalHandSize: p.hand.length
-            })),
-            maxPlayers: room.maxPlayers,
-            winner: {
-                name: winnerName
-            },
-            startedAt: room.startedAt || new Date(),
-            endedAt: new Date()
-        };
-
-        const game = new Game(gameData);
-        await game.save();
-        console.log(`📊 Game ${room.id} saved to database. Winner: ${winnerName}`);
-    } catch (error) {
-        console.error('Failed to save game:', error.message);
-    }
-}
-
-// Get or create player in database
-async function getOrCreatePlayer(name) {
-    if (!dbConnected) return null;
-
-    try {
-        let player = await Player.findOne({ username: name });
-        if (!player) {
-            player = new Player({
-                username: name,
-                isGuest: true
-            });
-            await player.save();
-            console.log(`👤 New guest player created: ${name}`);
-        }
-        return player;
-    } catch (error) {
-        console.error('Error with player lookup:', error.message);
-        return null;
-    }
 }
 
 const PORT = process.env.PORT || 3001;

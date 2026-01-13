@@ -1,26 +1,41 @@
-const mongoose = require('mongoose');
+const { Sequelize } = require('sequelize');
+
+let sequelize = null;
+let dbConnected = false;
 
 const connectDB = async () => {
     try {
-        const mongoURI = process.env.MONGODB_URI;
+        const databaseUrl = process.env.DATABASE_URL;
 
-        if (!mongoURI) {
-            console.warn('⚠️  MONGODB_URI not set. Running without database persistence.');
-            console.warn('   Set MONGODB_URI environment variable to enable player/game storage.');
+        if (!databaseUrl) {
+            console.warn('⚠️  DATABASE_URL not set. Running without database persistence.');
+            console.warn('   Create a PostgreSQL database on Render and set DATABASE_URL.');
             return false;
         }
 
-        const conn = await mongoose.connect(mongoURI, {
-            // Modern mongoose doesn't need these options anymore, but keeping for clarity
+        sequelize = new Sequelize(databaseUrl, {
+            dialect: 'postgres',
+            dialectOptions: {
+                ssl: {
+                    require: true,
+                    rejectUnauthorized: false // Required for Render PostgreSQL
+                }
+            },
+            logging: false // Set to console.log to debug SQL queries
         });
 
-        console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+        await sequelize.authenticate();
+        console.log('✅ PostgreSQL Connected');
+
+        dbConnected = true;
         return true;
     } catch (error) {
-        console.error(`❌ MongoDB Connection Error: ${error.message}`);
-        // Don't crash the server - allow it to run without DB (in-memory mode)
+        console.error(`❌ PostgreSQL Connection Error: ${error.message}`);
         return false;
     }
 };
 
-module.exports = connectDB;
+const getSequelize = () => sequelize;
+const isConnected = () => dbConnected;
+
+module.exports = { connectDB, getSequelize, isConnected };

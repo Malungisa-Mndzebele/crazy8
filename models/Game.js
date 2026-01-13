@@ -1,95 +1,104 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { getSequelize } = require('../config/db');
 
-const gameSchema = new mongoose.Schema({
-    roomId: {
-        type: String,
-        required: true,
-        unique: true,
-        index: true
-    },
-    status: {
-        type: String,
-        enum: ['waiting', 'in_progress', 'completed', 'abandoned'],
-        default: 'waiting'
-    },
-    players: [{
-        odId: String, // Socket ID during game
-        playerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
-        name: String,
-        isHost: { type: Boolean, default: false },
-        cardsPlayedCount: { type: Number, default: 0 },
-        eightsPlayedCount: { type: Number, default: 0 },
-        finalHandSize: { type: Number, default: 0 },
-        joinedAt: { type: Date, default: Date.now }
-    }],
-    maxPlayers: {
-        type: Number,
-        default: 4,
-        min: 2,
-        max: 8
-    },
-    winner: {
-        playerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
-        name: String
-    },
-    gameStats: {
-        totalTurns: { type: Number, default: 0 },
-        totalCardsDrawn: { type: Number, default: 0 },
-        totalEightsPlayed: { type: Number, default: 0 },
-        directionChanges: { type: Number, default: 0 }, // Jacks played
-        skipsIssued: { type: Number, default: 0 }, // Sevens played
-        penaltiesIssued: { type: Number, default: 0 } // Twos played
-    },
-    startedAt: {
-        type: Date
-    },
-    endedAt: {
-        type: Date
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now
+let Game = null;
+
+const initGameModel = () => {
+    const sequelize = getSequelize();
+    if (!sequelize) return null;
+
+    Game = sequelize.define('Game', {
+        id: {
+            type: DataTypes.INTEGER,
+            primaryKey: true,
+            autoIncrement: true
+        },
+        roomId: {
+            type: DataTypes.STRING(20),
+            allowNull: false,
+            unique: true
+        },
+        status: {
+            type: DataTypes.ENUM('waiting', 'in_progress', 'completed', 'abandoned'),
+            defaultValue: 'waiting'
+        },
+        playerNames: {
+            type: DataTypes.ARRAY(DataTypes.STRING),
+            defaultValue: []
+        },
+        maxPlayers: {
+            type: DataTypes.INTEGER,
+            defaultValue: 4
+        },
+        winnerName: {
+            type: DataTypes.STRING(50),
+            allowNull: true
+        },
+        totalTurns: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
+        },
+        startedAt: {
+            type: DataTypes.DATE,
+            allowNull: true
+        },
+        endedAt: {
+            type: DataTypes.DATE,
+            allowNull: true
+        }
+    }, {
+        tableName: 'games',
+        timestamps: true
+    });
+
+    return Game;
+};
+
+const getGameModel = () => Game;
+
+// Save a completed game
+const saveGameResult = async (room, winnerName) => {
+    if (!Game) return null;
+
+    try {
+        const game = await Game.create({
+            roomId: room.id,
+            status: 'completed',
+            playerNames: room.players.map(p => p.name),
+            maxPlayers: room.maxPlayers,
+            winnerName,
+            startedAt: room.startedAt || new Date(),
+            endedAt: new Date()
+        });
+
+        console.log(`📊 Game ${room.id} saved to database. Winner: ${winnerName}`);
+        return game;
+    } catch (error) {
+        console.error('Failed to save game:', error.message);
+        return null;
     }
-});
-
-// Virtual for game duration
-gameSchema.virtual('duration').get(function () {
-    if (!this.startedAt || !this.endedAt) return null;
-    return Math.round((this.endedAt - this.startedAt) / 1000); // Duration in seconds
-});
-
-// Start the game
-gameSchema.methods.startGame = function () {
-    this.status = 'in_progress';
-    this.startedAt = new Date();
-    return this.save();
 };
 
-// End the game with a winner
-gameSchema.methods.endGame = function (winnerSocketId, winnerName, winnerId = null) {
-    this.status = 'completed';
-    this.endedAt = new Date();
-    this.winner = {
-        playerId: winnerId,
-        name: winnerName
-    };
-    return this.save();
+// Get recent games
+const getRecentGames = async (limit = 10) => {
+    if (!Game) return [];
+
+    try {
+        return await Game.findAll({
+            where: { status: 'completed' },
+            order: [['endedAt', 'DESC']],
+            limit,
+            attributes: ['roomId', 'playerNames', 'winnerName', 'endedAt']
+        });
+    } catch (error) {
+        console.error('Error fetching recent games:', error.message);
+        return [];
+    }
 };
 
-// Abandon the game
-gameSchema.methods.abandon = function () {
-    this.status = 'abandoned';
-    this.endedAt = new Date();
-    return this.save();
+module.exports = {
+    initGameModel,
+    getGameModel,
+    saveGameResult,
+    getRecentGames
 };
-
-// Leaderboard aggregation
-gameSchema.statics.getLeaderboard = async function (limit = 10) {
-    const Player = mongoose.model('Player');
-    return Player.find({ 'stats.gamesPlayed': { $gt: 0 } })
-        .sort({ 'stats.gamesWon': -1 })
-        .limit(limit)
-        .select('username stats.gamesPlayed stats.gamesWon stats.gamesLost');
-};
-
-module.exports = mongoose.model('Game', gameSchema);

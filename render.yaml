@@ -1,11 +1,11 @@
 services:
   - type: web
     name: crazy-8-game
-    env: node
+    runtime: node
     plan: free
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: node server.js
     envVars:
       - key: NODE_VERSION
-        value: 20.11.0 # Or whatever recent version is standard
+        value: 20.11.0
     autoDeploy: true

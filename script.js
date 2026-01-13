@@ -1,4 +1,4 @@
-console.log("Crazy 8 Client v2.3 Loaded - Connecting to Render");
+console.log("Crazy 8 Client v2.4 Loaded - Connecting to Render");
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const SYMBOLS = { 'hearts': '♥', 'diamonds': '♦', 'clubs': '♣', 'spades': '♠' };
@@ -290,11 +290,29 @@ class Game {
     // --- Shared / UI ---
 
     updateUI() {
-        // Common UI Update
-        const topCard = this.discardPile[this.discardPile.length - 1];
+        // Discard Pile - Show scattered stack of recent cards
         this.dom.discardPile.innerHTML = '';
-        if (topCard) {
-            this.dom.discardPile.appendChild(this.createCardElement(topCard));
+        const cardsToShow = Math.min(this.discardPile.length, 5); // Show up to 5 cards
+        const startIdx = Math.max(0, this.discardPile.length - cardsToShow);
+
+        for (let i = startIdx; i < this.discardPile.length; i++) {
+            const card = this.discardPile[i];
+            const cardEl = this.createCardElement(card);
+            const isTop = (i === this.discardPile.length - 1);
+
+            // Random rotation and offset for scattered look (except top card)
+            if (!isTop) {
+                const rotation = (Math.random() - 0.5) * 30; // -15 to +15 degrees
+                const offsetX = (Math.random() - 0.5) * 20; // -10 to +10 px
+                const offsetY = (Math.random() - 0.5) * 10; // -5 to +5 px
+                cardEl.style.transform = `rotate(${rotation}deg) translate(${offsetX}px, ${offsetY}px)`;
+                cardEl.style.zIndex = i - startIdx;
+            } else {
+                cardEl.style.zIndex = 100;
+                cardEl.classList.add('top-card');
+            }
+            cardEl.style.position = 'absolute';
+            this.dom.discardPile.appendChild(cardEl);
         }
 
         if (this.gameForcedSuit) {
@@ -480,20 +498,20 @@ class Game {
         // Hide original immediately
         startEl.style.opacity = '0';
 
-        // Animate
         // Force reflow
         clone.offsetHeight;
 
-        // Calculate center delta
+        // Calculate center delta with random landing rotation
         const deltaX = (targetRect.left + targetRect.width / 2) - (rect.left + rect.width / 2);
         const deltaY = (targetRect.top + targetRect.height / 2) - (rect.top + rect.height / 2);
+        const landingRotation = (Math.random() - 0.5) * 20; // -10 to +10 degrees
 
-        clone.style.transform = `translate(${deltaX}px, ${deltaY}px) rotate(360deg) scale(1.0)`;
+        clone.style.transform = `translate(${deltaX}px, ${deltaY}px) rotate(${landingRotation}deg) scale(1.0)`;
 
         setTimeout(() => {
             clone.remove();
             callback();
-        }, 600); // Match CSS transition time
+        }, 500); // Match CSS transition time
     }
 
     isValidMovePVE(card) {

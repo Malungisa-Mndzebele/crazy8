@@ -1,8 +1,19 @@
-console.log("Crazy 8 Client v2.5 Loaded - Connecting to Render");
+console.log("Crazy 8 Client v2.6 Loaded - Connecting to Render");
+
+// ==================== GAME CONSTANTS ====================
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const SYMBOLS = { 'hearts': '♥', 'diamonds': '♦', 'clubs': '♣', 'spades': '♠' };
 const BOT_NAMES = ['Hal', 'Chip', 'Data', 'Robo', 'Spark', 'Wire', 'Glitch', 'Byte'];
+
+// Game configuration constants
+const CONFIG = {
+    CARDS_PER_PLAYER: 5,
+    CARDS_PER_PLAYER_TWO_PLAYER: 7,
+    CARD_ANIMATION_DURATION_MS: 1500,
+    BOT_THINK_DELAY_MS: 1000,
+    MESSAGE_DISPLAY_MS: 2000
+};
 
 class Card {
     constructor(suit, rank, id) {
@@ -233,9 +244,22 @@ class Game {
             this.syncState(state);
         });
 
-        this.socket.on('gameOver', ({ winner }) => {
-            this.dom.winnerText.textContent = `${winner} Wins!`;
+        this.socket.on('gameOver', ({ winner, reason }) => {
+            let message = `${winner} Wins!`;
+            if (reason) {
+                message += ` (${reason})`;
+            }
+            this.dom.winnerText.textContent = message;
             this.dom.gameOverModal.classList.remove('hidden');
+        });
+
+        // Handle player disconnect events
+        this.socket.on('playerDisconnected', ({ name, index }) => {
+            this.showMessage(`${name} disconnected`);
+        });
+
+        this.socket.on('playerLeft', ({ name }) => {
+            this.showMessage(`${name} left the room`);
         });
     }
 
@@ -265,9 +289,14 @@ class Game {
             this.players.push(new Player(botNames[i - 1] || `Bot ${i}`, 'bot'));
         }
 
+        const cardsPerPlayer = totalPlayers === 2
+            ? CONFIG.CARDS_PER_PLAYER_TWO_PLAYER
+            : CONFIG.CARDS_PER_PLAYER;
+
         this.players.forEach(p => {
-            for (let i = 0; i < 5; i++) p.hand.push(this.deck.deal());
-            if (totalPlayers === 2) p.hand.push(this.deck.deal());
+            for (let i = 0; i < cardsPerPlayer; i++) {
+                p.hand.push(this.deck.deal());
+            }
         });
 
         let startCard = this.deck.deal();
@@ -335,15 +364,18 @@ class Game {
                 const el = document.createElement('div');
                 el.className = `opponent-card ${isActive ? 'active-turn' : ''}`;
 
+                // Use handCount if hand array is not available (secure online mode)
+                const cardCount = p.handCount ?? p.hand?.length ?? 0;
+                const visualCount = Math.min(cardCount, 5);
+
                 let cardsHtml = `<div class="opponent-hand-mini">`;
-                const visualCount = Math.min(p.hand.length, 5); // In online we might just have count? logic below
                 for (let c = 0; c < visualCount; c++) cardsHtml += '<div class="mini-card-back"></div>';
                 cardsHtml += '</div>';
 
                 el.innerHTML = `
                      <div class="avatar robot">👤</div>
                      <div class="name">${p.name}</div>
-                     <div class="card-count">${p.hand.length} Cards</div>
+                     <div class="card-count">${cardCount} Cards</div>
                      ${cardsHtml}
                  `;
                 this.dom.opponentsContainer.appendChild(el);
@@ -404,20 +436,39 @@ class Game {
 
     // --- Online Sync ---
     syncState(state) {
-        this.players = state.players.map(p => {
-            // Rehydrate cards
-            p.hand = p.hand.map(c => new Card(c.suit, c.rank));
-            return p;
+        // Handle personalized state from secure server
+        // Server now sends myIndex to identify which player we are
+        const myIndex = state.myIndex !== undefined ? state.myIndex :
+            state.players.findIndex(p => p.id === this.myPlayerId);
+
+        this.players = state.players.map((p, index) => {
+            const player = {
+                id: p.id,
+                name: p.name,
+                hand: [],
+                handCount: p.handCount || (p.hand ? p.hand.length : 0)
+            };
+
+            // Only our own hand is provided by the secure server
+            if (p.hand && p.hand.length > 0) {
+                player.hand = p.hand.map(c => new Card(c.suit, c.rank));
+            } else if (index === myIndex && state.myHand) {
+                // Fallback for alternative state format
+                player.hand = state.myHand.map(c => new Card(c.suit, c.rank));
+            }
+
+            return player;
         });
+
         this.discardPile = state.discardPile.map(c => new Card(c.suit, c.rank));
         this.currentTurn = state.currentTurn;
         this.gameForcedSuit = state.gameForcedSuit;
         this.drawPenalty = state.drawPenalty;
 
         // Handle Pick Suit UI
-        const myTurn = (this.players[this.currentTurn].id === this.myPlayerId);
+        const myTurn = myIndex !== -1 && this.currentTurn === myIndex;
         const top = this.discardPile[this.discardPile.length - 1];
-        if (myTurn && top.rank === '8' && !this.gameForcedSuit) {
+        if (myTurn && top && top.rank === '8' && !this.gameForcedSuit) {
             this.dom.suitModal.classList.remove('hidden');
         } else {
             this.dom.suitModal.classList.add('hidden');
@@ -444,7 +495,7 @@ class Game {
         this.dom.messageArea.style.opacity = '1';
         setTimeout(() => {
             this.dom.messageArea.style.opacity = '0';
-        }, 2000);
+        }, CONFIG.MESSAGE_DISPLAY_MS);
     }
 
     // --- PVE Logic (simplified for brevity, keeping original flows) ---
@@ -511,7 +562,7 @@ class Game {
         setTimeout(() => {
             clone.remove();
             callback();
-        }, 1500); // Match CSS transition time
+        }, CONFIG.CARD_ANIMATION_DURATION_MS);
     }
 
     isValidMovePVE(card) {
@@ -557,9 +608,29 @@ class Game {
 
     botPickSuitPVE(idx) {
         setTimeout(() => {
-            this.gameForcedSuit = 'hearts'; // dumb bot
+            // Smart suit selection: pick the suit most common in bot's hand
+            const bot = this.players[idx];
+            const suitCounts = { hearts: 0, diamonds: 0, clubs: 0, spades: 0 };
+
+            bot.hand.forEach(card => {
+                if (card.rank !== '8') { // Don't count 8s
+                    suitCounts[card.suit]++;
+                }
+            });
+
+            // Find the suit with the most cards
+            let bestSuit = 'hearts';
+            let maxCount = 0;
+            for (const suit in suitCounts) {
+                if (suitCounts[suit] > maxCount) {
+                    maxCount = suitCounts[suit];
+                    bestSuit = suit;
+                }
+            }
+
+            this.gameForcedSuit = bestSuit;
             this.nextTurnPVE();
-        }, 1000);
+        }, CONFIG.BOT_THINK_DELAY_MS);
     }
 
     humanDrawPVE() {
@@ -593,18 +664,37 @@ class Game {
     botTurnPVE() {
         const bot = this.players[this.currentTurn];
         setTimeout(() => {
-            // Simplified bot
+            // Handle draw penalty first
+            if (this.drawPenalty > 0) {
+                const twos = bot.hand.filter(c => c.rank === '2');
+                if (twos.length > 0) {
+                    // Play a 2 to stack
+                    const c = twos[0];
+                    bot.hand.splice(bot.hand.indexOf(c), 1);
+                    this.playCardHelperPVE(c, this.currentTurn);
+                } else {
+                    // Must take penalty
+                    this.resolvePVEPenalty(this.currentTurn);
+                }
+                return;
+            }
+
+            // Find valid moves
             const valid = bot.hand.filter(c => this.isValidMovePVE(c));
+
             if (valid.length > 0) {
-                const c = valid[0];
+                // Prioritize: regular cards first, then 8s (save wild cards)
+                const nonEights = valid.filter(c => c.rank !== '8');
+                const c = nonEights.length > 0 ? nonEights[0] : valid[0];
                 bot.hand.splice(bot.hand.indexOf(c), 1);
                 this.playCardHelperPVE(c, this.currentTurn);
             } else {
+                // No valid moves - draw a card
                 if (this.deck.isEmpty) this.refillDeckPVE();
                 if (!this.deck.isEmpty) bot.hand.push(this.deck.deal());
                 this.nextTurnPVE();
             }
-        }, 1000);
+        }, CONFIG.BOT_THINK_DELAY_MS);
     }
 
     refillDeckPVE() {

@@ -7,67 +7,93 @@ const { connectDB, getSequelize, isConnected } = require('./config/db');
 const { initPlayerModel, getLeaderboard, recordGameResult } = require('./models/Player');
 const { initGameModel, saveGameResult } = require('./models/Game');
 
-console.log("Starting Crazy 8 Server v2.4...");
+console.log("Starting Crazy 8 Server v2.5...");
+
+// ==================== GAME CONSTANTS ====================
+const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
+const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+const SPECIAL_CARDS = ['8', '2', '7', 'J'];
+
+// Game configuration constants
+const CONFIG = {
+    CARDS_PER_PLAYER: 5,
+    CARDS_PER_PLAYER_TWO_PLAYER: 7,
+    MIN_PLAYERS: 2,
+    MAX_PLAYERS: 7,
+    DEFAULT_MAX_PLAYERS: 4,
+    MAX_NAME_LENGTH: 50,
+    DISCONNECT_GRACE_PERIOD_MS: 30000, // 30 seconds to reconnect
+    ROOM_ID_LENGTH: 6
+};
+
+// ==================== SERVER SETUP ====================
+const app = express();
+const server = http.createServer(app);
 
 // Database connection flag
 let dbConnected = false;
 
-// Connect to PostgreSQL and initialize models
-(async () => {
-    dbConnected = await connectDB();
-    if (dbConnected) {
-        // Initialize models
-        initPlayerModel();
-        initGameModel();
+// Production CORS configuration
+const allowedOrigins = process.env.NODE_ENV === 'production'
+    ? ['https://khasinogaming.com', 'https://www.khasinogaming.com']
+    : '*';
 
-        // Sync tables (creates them if they don't exist)
-        const sequelize = getSequelize();
-        await sequelize.sync({ alter: true });
-        console.log('✅ Database tables synced');
-    }
-})();
-
-const app = express();
-const server = http.createServer(app);
 const io = new Server(server, {
     transports: ['websocket', 'polling'],
     cors: {
-        origin: "*",
+        origin: allowedOrigins,
         methods: ["GET", "POST"]
     }
 });
 
-// Health check with DB status
-app.get('/health', (req, res) => {
-    res.json({
-        status: 'Crazy 8 Backend v2.4 Running',
-        database: dbConnected ? 'PostgreSQL connected' : 'not connected (in-memory mode)'
-    });
-});
-
-// Leaderboard API endpoint
-app.get('/api/leaderboard', async (req, res) => {
-    if (!dbConnected) {
-        return res.json({ error: 'Database not connected', leaderboard: [] });
-    }
-    try {
-        const leaderboard = await getLeaderboard(10);
-        res.json({ leaderboard });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Static files are served from khasinogaming.com, not from this backend.
-// app.use(express.static(__dirname));
-
-// Game Constants
-const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
-const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-
 // Rooms State (in-memory, with optional DB persistence)
 const rooms = {};
 
+// ==================== UTILITY FUNCTIONS ====================
+
+/**
+ * Sanitizes player name to prevent XSS and limit length
+ */
+function sanitizeName(name) {
+    if (typeof name !== 'string') return 'Player';
+    return name
+        .substring(0, CONFIG.MAX_NAME_LENGTH)
+        .replace(/<[^>]*>/g, '')  // Remove HTML tags
+        .replace(/[^\w\s-]/g, '') // Keep only alphanumeric, spaces, hyphens
+        .trim() || 'Player';
+}
+
+/**
+ * Validates and clamps maxPlayers to valid range
+ */
+function validateMaxPlayers(value) {
+    const num = parseInt(value);
+    if (isNaN(num)) return CONFIG.DEFAULT_MAX_PLAYERS;
+    return Math.min(Math.max(num, CONFIG.MIN_PLAYERS), CONFIG.MAX_PLAYERS);
+}
+
+/**
+ * Generates a random room ID
+ */
+function generateRoomId() {
+    return Math.random().toString(36).substring(2, 2 + CONFIG.ROOM_ID_LENGTH);
+}
+
+/**
+ * Finds the room a player is in by their socket ID
+ */
+function findPlayerRoom(socketId) {
+    for (const roomId in rooms) {
+        const room = rooms[roomId];
+        const playerIndex = room.players.findIndex(p => p.id === socketId);
+        if (playerIndex !== -1) {
+            return { room, playerIndex };
+        }
+    }
+    return null;
+}
+
+// ==================== CARD CLASSES ====================
 
 class Card {
     constructor(suit, rank) {
@@ -75,7 +101,9 @@ class Card {
         this.rank = rank;
         this.id = `${rank}-${suit}`;
     }
-    get color() { return (this.suit === 'hearts' || this.suit === 'diamonds') ? 'red' : 'black'; }
+    get color() {
+        return (this.suit === 'hearts' || this.suit === 'diamonds') ? 'red' : 'black';
+    }
 }
 
 class Deck {
@@ -98,25 +126,214 @@ class Deck {
             [this.cards[i], this.cards[j]] = [this.cards[j], this.cards[i]];
         }
     }
-    deal() { return this.cards.pop(); }
-    get isEmpty() { return this.cards.length === 0; }
+    deal() {
+        return this.cards.pop();
+    }
+    get isEmpty() {
+        return this.cards.length === 0;
+    }
 }
+
+// ==================== STATE SANITIZATION (ANTI-CHEAT) ====================
+
+/**
+ * Sends game state to each player with only their own hand visible
+ * This prevents cheating by inspecting browser console
+ */
+function broadcastGameState(room) {
+    const baseState = {
+        discardPile: room.discardPile,
+        currentTurn: room.currentTurn,
+        gameForcedSuit: room.gameForcedSuit,
+        drawPenalty: room.drawPenalty
+    };
+
+    // Send personalized state to each player
+    room.players.forEach((player, index) => {
+        const personalizedState = {
+            ...baseState,
+            players: room.players.map((p, i) => ({
+                id: p.id,
+                name: p.name,
+                handCount: p.hand.length,
+                // Only include hand for the receiving player
+                hand: (i === index) ? p.hand : undefined
+            })),
+            myIndex: index
+        };
+        io.to(player.id).emit('gameState', personalizedState);
+    });
+}
+
+/**
+ * Legacy sanitizeState for backward compatibility (non-secure, for PVE)
+ * @deprecated Use broadcastGameState for online games
+ */
+function sanitizeState(room) {
+    return {
+        players: room.players,
+        discardPile: room.discardPile,
+        currentTurn: room.currentTurn,
+        gameForcedSuit: room.gameForcedSuit,
+        drawPenalty: room.drawPenalty
+    };
+}
+
+// ==================== GAME LOGIC ====================
+
+function validateMove(room, card) {
+    if (!card) return false;
+    if (room.drawPenalty > 0) return card.rank === '2';
+
+    const top = room.discardPile[room.discardPile.length - 1];
+    if (!top) return true; // Empty discard pile, any card is valid
+
+    const suit = room.gameForcedSuit || top.suit;
+    return (card.rank === '8' || card.suit === suit || card.rank === top.rank);
+}
+
+function advanceTurn(room, skip = false) {
+    const len = room.players.length;
+    if (len === 0) return;
+
+    let next = room.currentTurn + room.direction;
+    if (skip) next += room.direction;
+
+    // Normalize to valid index
+    room.currentTurn = ((next % len) + len) % len;
+
+    // Skip disconnected players
+    let attempts = 0;
+    while (room.players[room.currentTurn]?.disconnected && attempts < len) {
+        next = room.currentTurn + room.direction;
+        room.currentTurn = ((next % len) + len) % len;
+        attempts++;
+    }
+}
+
+function refillDeck(room) {
+    if (room.discardPile.length <= 1) return;
+    const top = room.discardPile.pop();
+    room.deck.cards = room.discardPile;
+    room.discardPile = [top];
+    room.deck.shuffle();
+}
+
+function startRoomGame(room) {
+    room.gameStarted = true;
+    room.startedAt = new Date();
+    room.deck.reset();
+    room.discardPile = [];
+
+    const cardsPerPlayer = room.players.length === 2
+        ? CONFIG.CARDS_PER_PLAYER_TWO_PLAYER
+        : CONFIG.CARDS_PER_PLAYER;
+
+    room.players.forEach(p => {
+        p.hand = [];
+        for (let i = 0; i < cardsPerPlayer; i++) {
+            p.hand.push(room.deck.deal());
+        }
+    });
+
+    // Deal starting card (no special cards)
+    let startCard = room.deck.deal();
+    while (SPECIAL_CARDS.includes(startCard.rank)) {
+        room.deck.cards.unshift(startCard);
+        room.deck.shuffle();
+        startCard = room.deck.deal();
+    }
+    room.discardPile.push(startCard);
+
+    io.to(room.id).emit('gameStarted');
+    broadcastGameState(room);
+}
+
+function handlePlayerDisconnect(room, playerIndex, socketId) {
+    const player = room.players[playerIndex];
+
+    if (!room.gameStarted) {
+        // Game hasn't started - remove player from room
+        room.players.splice(playerIndex, 1);
+        io.to(room.id).emit('playerList', room.players);
+        io.to(room.id).emit('playerLeft', { name: player.name });
+
+        // If room is empty, delete it
+        if (room.players.length === 0) {
+            delete rooms[room.id];
+            console.log(`🗑️ Room ${room.id} deleted (empty)`);
+        }
+    } else {
+        // Game in progress - mark player as disconnected
+        player.disconnected = true;
+        player.disconnectedAt = Date.now();
+
+        io.to(room.id).emit('playerDisconnected', {
+            name: player.name,
+            index: playerIndex
+        });
+
+        // If it was their turn, advance to next player
+        if (room.currentTurn === playerIndex) {
+            advanceTurn(room, false);
+            broadcastGameState(room);
+        }
+
+        // Check if all players disconnected
+        const connectedPlayers = room.players.filter(p => !p.disconnected);
+        if (connectedPlayers.length <= 1) {
+            // End game - last remaining player wins (or abandon)
+            if (connectedPlayers.length === 1) {
+                io.to(room.id).emit('gameOver', {
+                    winner: connectedPlayers[0].name,
+                    reason: 'All other players disconnected'
+                });
+            }
+            delete rooms[room.id];
+            console.log(`🗑️ Room ${room.id} deleted (all players left)`);
+        }
+    }
+}
+
+// ==================== EXPRESS ROUTES ====================
+
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'Crazy 8 Backend v2.5 Running',
+        database: dbConnected ? 'PostgreSQL connected' : 'not connected (in-memory mode)',
+        activeRooms: Object.keys(rooms).length
+    });
+});
+
+app.get('/api/leaderboard', async (req, res) => {
+    if (!dbConnected) {
+        return res.json({ error: 'Database not connected', leaderboard: [] });
+    }
+    try {
+        const leaderboard = await getLeaderboard(10);
+        res.json({ leaderboard });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== SOCKET.IO EVENT HANDLERS ====================
 
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
     socket.on('createRoom', (data) => {
         let name = "Player";
-        let maxPlayers = 7;
+        let maxPlayers = CONFIG.DEFAULT_MAX_PLAYERS;
 
         if (typeof data === 'string') {
-            name = data; // Backward compat
-        } else if (typeof data === 'object') {
-            name = data.name || "Player";
-            maxPlayers = data.maxPlayers || 7;
+            name = sanitizeName(data);
+        } else if (typeof data === 'object' && data !== null) {
+            name = sanitizeName(data.name);
+            maxPlayers = validateMaxPlayers(data.maxPlayers);
         }
 
-        const roomId = Math.random().toString(36).substring(7);
+        const roomId = generateRoomId();
         rooms[roomId] = {
             id: roomId,
             players: [{ id: socket.id, name: name, hand: [] }],
@@ -127,32 +344,46 @@ io.on('connection', (socket) => {
             direction: 1,
             drawPenalty: 0,
             gameStarted: false,
-            gameForcedSuit: null
+            gameForcedSuit: null,
+            createdAt: new Date()
         };
+
         socket.join(roomId);
         socket.emit('roomCreated', roomId);
         io.to(roomId).emit('playerList', rooms[roomId].players);
+        console.log(`🎲 Room ${roomId} created by ${name}`);
     });
 
     socket.on('joinRoom', ({ roomId, name }) => {
-        const room = rooms[roomId];
-        if (room && !room.gameStarted) {
-            if (room.players.length >= (room.maxPlayers || 7)) {
-                socket.emit('error', 'Room full');
-                return;
-            }
-            room.players.push({ id: socket.id, name: name, hand: [] });
-            socket.join(roomId);
-            socket.emit('joinedRoom', roomId);
-            io.to(roomId).emit('playerList', room.players);
-        } else {
-            socket.emit('error', 'Room not found or game started');
+        if (!roomId || typeof roomId !== 'string') {
+            socket.emit('error', 'Invalid room ID');
+            return;
         }
+
+        const room = rooms[roomId];
+        if (!room) {
+            socket.emit('error', 'Room not found');
+            return;
+        }
+        if (room.gameStarted) {
+            socket.emit('error', 'Game already started');
+            return;
+        }
+        if (room.players.length >= room.maxPlayers) {
+            socket.emit('error', 'Room is full');
+            return;
+        }
+
+        const sanitizedName = sanitizeName(name);
+        room.players.push({ id: socket.id, name: sanitizedName, hand: [] });
+        socket.join(roomId);
+        socket.emit('joinedRoom', roomId);
+        io.to(roomId).emit('playerList', room.players);
+        console.log(`👋 ${sanitizedName} joined room ${roomId}`);
     });
 
-    // Quick Match - Find or create an available room
     socket.on('quickMatch', ({ name }) => {
-        name = name || "Player";
+        const sanitizedName = sanitizeName(name);
 
         // Find an available room (not started, not full)
         let availableRoom = null;
@@ -165,53 +396,67 @@ io.on('connection', (socket) => {
         }
 
         if (availableRoom) {
-            // Join the available room
-            availableRoom.players.push({ id: socket.id, name: name, hand: [] });
+            availableRoom.players.push({ id: socket.id, name: sanitizedName, hand: [] });
             socket.join(availableRoom.id);
             socket.emit('joinedRoom', availableRoom.id);
             io.to(availableRoom.id).emit('playerList', availableRoom.players);
-            console.log(`⚡ Quick Match: ${name} joined room ${availableRoom.id}`);
+            console.log(`⚡ Quick Match: ${sanitizedName} joined room ${availableRoom.id}`);
         } else {
-            // No available rooms - create a new one
-            const roomId = Math.random().toString(36).substring(7);
+            const roomId = generateRoomId();
             rooms[roomId] = {
                 id: roomId,
-                players: [{ id: socket.id, name: name, hand: [] }],
-                maxPlayers: 4, // Default max for quick match
+                players: [{ id: socket.id, name: sanitizedName, hand: [] }],
+                maxPlayers: CONFIG.DEFAULT_MAX_PLAYERS,
                 deck: new Deck(),
                 discardPile: [],
                 currentTurn: 0,
                 direction: 1,
                 drawPenalty: 0,
                 gameStarted: false,
-                gameForcedSuit: null
+                gameForcedSuit: null,
+                createdAt: new Date()
             };
             socket.join(roomId);
             socket.emit('roomCreated', roomId);
             io.to(roomId).emit('playerList', rooms[roomId].players);
-            console.log(`⚡ Quick Match: ${name} created new room ${roomId}`);
+            console.log(`⚡ Quick Match: ${sanitizedName} created new room ${roomId}`);
         }
     });
 
     socket.on('startGame', (roomId) => {
-        const room = rooms[roomId];
-        if (room && room.players[0].id === socket.id) {
-            startRoomGame(room);
-        }
-    });
+        if (!roomId || typeof roomId !== 'string') return;
 
-    socket.on('playCard', ({ roomId, cardIndex }) => {
         const room = rooms[roomId];
         if (!room) return;
 
+        // Only the host (first player) can start the game
+        if (room.players[0]?.id !== socket.id) return;
+
+        // Need at least 2 players
+        if (room.players.length < CONFIG.MIN_PLAYERS) {
+            socket.emit('error', `Need at least ${CONFIG.MIN_PLAYERS} players to start`);
+            return;
+        }
+
+        startRoomGame(room);
+    });
+
+    socket.on('playCard', ({ roomId, cardIndex }) => {
+        if (!roomId || typeof roomId !== 'string') return;
+        if (typeof cardIndex !== 'number' || cardIndex < 0) return;
+
+        const room = rooms[roomId];
+        if (!room || !room.gameStarted) return;
+
         const playerIdx = room.players.findIndex(p => p.id === socket.id);
-        if (playerIdx !== room.currentTurn) return; // Not your turn
+        if (playerIdx === -1 || playerIdx !== room.currentTurn) return;
 
         const player = room.players[playerIdx];
+        if (cardIndex >= player.hand.length) return;
+
         const card = player.hand[cardIndex];
 
         if (validateMove(room, card)) {
-            // Apply Move
             player.hand.splice(cardIndex, 1);
             room.discardPile.push(card);
             room.gameForcedSuit = null;
@@ -224,25 +469,17 @@ io.on('connection', (socket) => {
                 skip = true;
             } else if (card.rank === 'J') {
                 room.direction *= -1;
-            } else if (card.rank === '8') {
-                // Wait for suit selection? 
-                // For simplicity in this step, we'll wait for a separate 'pickSuit' event or handle it here if passed.
-                // Or we require the client to send suit with the play request for 8s?
-                // Let's assume client sends suit if it's an 8.
             }
 
             // Check Win
             if (player.hand.length === 0) {
                 io.to(roomId).emit('gameOver', { winner: player.name });
 
-                // Save game to database if connected
                 if (dbConnected) {
-                    // Save game record
                     saveGameResult(room, player.name).catch(err =>
                         console.error('Error saving game:', err.message)
                     );
 
-                    // Update player stats
                     room.players.forEach(p => {
                         const won = p.name === player.name;
                         recordGameResult(p.name, won).catch(err =>
@@ -256,37 +493,37 @@ io.on('connection', (socket) => {
             }
 
             if (card.rank === '8') {
-                // If 8, we don't advance turn yet. waiting for suit.
-                // We should tell client to pick suit? 
-                // Or if client sent suit, we use it. 
-                // Simplified: client sends "playCard" then "pickSuit" immediately? 
-                // Better: Client emits 'playCard' with suit if it is 8.
-                io.to(roomId).emit('gameState', sanitizeState(room));
-                return; // Client needs to emit pickSuit
+                // Wait for suit selection
+                broadcastGameState(room);
+                return;
             }
 
             advanceTurn(room, skip);
-            io.to(roomId).emit('gameState', sanitizeState(room));
+            broadcastGameState(room);
         }
     });
 
     socket.on('pickSuit', ({ roomId, suit }) => {
+        if (!roomId || typeof roomId !== 'string') return;
+        if (!suit || !SUITS.includes(suit)) return;
+
         const room = rooms[roomId];
-        if (!room) return;
-        if (room.players[room.currentTurn].id !== socket.id) return;
+        if (!room || !room.gameStarted) return;
+        if (room.players[room.currentTurn]?.id !== socket.id) return;
 
         room.gameForcedSuit = suit;
         advanceTurn(room, false);
-        io.to(roomId).emit('gameState', sanitizeState(room));
+        broadcastGameState(room);
     });
 
     socket.on('drawCard', (roomId) => {
+        if (!roomId || typeof roomId !== 'string') return;
+
         const room = rooms[roomId];
-        // Validate turn
-        if (!room || room.players[room.currentTurn].id !== socket.id) return;
+        if (!room || !room.gameStarted) return;
+        if (room.players[room.currentTurn]?.id !== socket.id) return;
 
         if (room.drawPenalty > 0) {
-            // Draw penalty
             const penalty = room.drawPenalty;
             room.drawPenalty = 0;
             for (let i = 0; i < penalty; i++) {
@@ -295,118 +532,51 @@ io.on('connection', (socket) => {
                     room.players[room.currentTurn].hand.push(room.deck.deal());
                 }
             }
-            advanceTurn(room, false); // Skip turn after penalty
+            advanceTurn(room, false);
         } else {
-            // Normal Draw
             if (room.deck.isEmpty) refillDeck(room);
             if (!room.deck.isEmpty) {
-                const card = room.deck.deal();
-                room.players[room.currentTurn].hand.push(card);
-                // Turn passes immediately on draw
+                room.players[room.currentTurn].hand.push(room.deck.deal());
                 advanceTurn(room, false);
             }
         }
-        io.to(roomId).emit('gameState', sanitizeState(room));
+        broadcastGameState(room);
     });
 
     socket.on('disconnect', () => {
-        // Handle disconnect (maybe pause game or remove player)
+        console.log('User disconnected:', socket.id);
+
+        const result = findPlayerRoom(socket.id);
+        if (result) {
+            const { room, playerIndex } = result;
+            handlePlayerDisconnect(room, playerIndex, socket.id);
+        }
     });
 });
 
-function startRoomGame(room) {
-    room.gameStarted = true;
-    room.deck.reset();
-    room.discardPile = [];
-    room.players.forEach(p => {
-        p.hand = [];
-        for (let i = 0; i < 5; i++) p.hand.push(room.deck.deal());
-        if (room.players.length === 2) {
-            p.hand.push(room.deck.deal());
-            p.hand.push(room.deck.deal());
-        }
-    });
+// ==================== SERVER STARTUP ====================
 
-    let startCard = room.deck.deal();
-    while (['8', '2', '7', 'J'].includes(startCard.rank)) {
-        room.deck.cards.unshift(startCard);
-        room.deck.shuffle();
-        startCard = room.deck.deal();
+async function startServer() {
+    // Connect to database first
+    dbConnected = await connectDB();
+
+    if (dbConnected) {
+        initPlayerModel();
+        initGameModel();
+
+        const sequelize = getSequelize();
+        await sequelize.sync({ alter: true });
+        console.log('✅ Database tables synced');
     }
-    room.discardPile.push(startCard);
 
-    io.to(room.id).emit('gameStarted');
-    io.to(room.id).emit('gameState', sanitizeState(room));
+    const PORT = process.env.PORT || 3001;
+    server.listen(PORT, () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+        console.log(`📊 Database: ${dbConnected ? 'Connected' : 'Running in memory mode'}`);
+    });
 }
 
-function validateMove(room, card) {
-    if (room.drawPenalty > 0) return card.rank === '2';
-
-    const top = room.discardPile[room.discardPile.length - 1];
-    const suit = room.gameForcedSuit || top.suit;
-
-    return (card.rank === '8' || card.suit === suit || card.rank === top.rank);
-}
-
-function advanceTurn(room, skip) {
-    const len = room.players.length;
-    let next = room.currentTurn + room.direction;
-    if (skip) next += room.direction;
-
-    // Normalize
-    room.currentTurn = ((next % len) + len) % len;
-}
-
-function refillDeck(room) {
-    if (room.discardPile.length <= 1) return;
-    const top = room.discardPile.pop();
-    room.deck.cards = room.discardPile;
-    room.discardPile = [top];
-    room.deck.shuffle();
-}
-
-function sanitizeState(room) {
-    // Hide hands of others? 
-    // For simplicity, we send full state, but client only shows own.
-    // Ideally, we should map sending specific state to each socket.
-    return {
-        players: room.players.map(p => ({
-            id: p.id,
-            name: p.name,
-            handCount: p.hand.length,
-            // We'll send full hand? better security: send full hand ONLY to that player.
-            // But let's keep it simple for MVP internal. 
-            // We'll send HandCount for all, and "hand" is filled only for the requester? 
-            // No, simplified: Broadcast public state, let client filter? No, that's cheating.
-            // We'll send "Opponents" list without hands, and "Me" with hand?
-            // Socket.io standard is strict.
-        })),
-        discardPile: room.discardPile.length > 0 ? [room.discardPile[room.discardPile.length - 1]] : [],
-        currentTurn: room.currentTurn,
-        gameForcedSuit: room.gameForcedSuit,
-        drawPenalty: room.drawPenalty,
-        // We need to send "My Hand" to each person.
-        // We can't do that with one emit.
-        // We'll trust the client for now or iterate.
-        // Let's iterate.
-    };
-}
-
-// Override sanitize for simplified "trust client" for this MVP step or iterate
-// We'll actually iterate in the emit where possible, but for now:
-// Let's attach full hands to the state object and let client hide them.
-// (Not secure but works for "Play with Humans" proof of concept).
-function sanitizeState(room) {
-    return {
-        players: room.players, // Sending full hands
-        discardPile: room.discardPile,
-        currentTurn: room.currentTurn,
-        gameForcedSuit: room.gameForcedSuit,
-        drawPenalty: room.drawPenalty
-    };
-}
-
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+startServer().catch(err => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
 });

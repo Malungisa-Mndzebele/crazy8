@@ -1,15 +1,21 @@
 {
   "name": "crazy-8",
-  "version": "1.0.0",
+  "version": "2.6.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "dev": "node --watch server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "card-game",
+    "crazy-8s",
+    "multiplayer",
+    "socket.io"
+  ],
+  "author": "Malungisa Mndzebele",
   "license": "ISC",
-  "description": "",
+  "description": "A modern multiplayer Crazy 8s card game with real-time online play",
   "dependencies": {
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
@@ -17,5 +23,8 @@
     "sequelize": "^6.37.7",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

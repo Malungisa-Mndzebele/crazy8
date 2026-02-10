@@ -2,12 +2,11 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
-const path = require('path');
 const { connectDB, getSequelize, isConnected } = require('./config/db');
 const { initPlayerModel, getLeaderboard, recordGameResult } = require('./models/Player');
 const { initGameModel, saveGameResult } = require('./models/Game');
 
-console.log("Starting Crazy 8 Server v2.5...");
+console.log("Starting Crazy 8 Server v2.6...");
 
 // ==================== GAME CONSTANTS ====================
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
@@ -165,19 +164,7 @@ function broadcastGameState(room) {
     });
 }
 
-/**
- * Legacy sanitizeState for backward compatibility (non-secure, for PVE)
- * @deprecated Use broadcastGameState for online games
- */
-function sanitizeState(room) {
-    return {
-        players: room.players,
-        discardPile: room.discardPile,
-        currentTurn: room.currentTurn,
-        gameForcedSuit: room.gameForcedSuit,
-        drawPenalty: room.drawPenalty
-    };
-}
+
 
 // ==================== GAME LOGIC ====================
 
@@ -299,7 +286,7 @@ function handlePlayerDisconnect(room, playerIndex, socketId) {
 
 app.get('/health', (req, res) => {
     res.json({
-        status: 'Crazy 8 Backend v2.5 Running',
+        status: 'Crazy 8 Backend v2.6 Running',
         database: dbConnected ? 'PostgreSQL connected' : 'not connected (in-memory mode)',
         activeRooms: Object.keys(rooms).length
     });

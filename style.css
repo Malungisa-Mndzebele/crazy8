@@ -160,6 +160,27 @@ body {
     box-shadow: var(--shadow-md);
 }
 
+/* Playable card highlight */
+.card.playable {
+    box-shadow: 0 0 12px 3px rgba(76, 175, 80, 0.6), 0 0 4px rgba(76, 175, 80, 0.4);
+    border: 2px solid rgba(76, 175, 80, 0.7);
+}
+
+.card.playable:hover {
+    box-shadow: 0 0 20px 5px rgba(76, 175, 80, 0.8), var(--shadow-md);
+    transform: translateY(-24px) rotate(2deg) scale(1.12);
+}
+
+.card.unplayable {
+    opacity: 0.55;
+    filter: saturate(0.4);
+}
+
+.card.unplayable:hover {
+    transform: translateY(-8px) scale(1.02);
+    opacity: 0.7;
+}
+
 .card.red {
     color: #e53935;
 }
@@ -243,6 +264,39 @@ body {
     transform: scale(1.05);
 }
 
+/* Draw pile pulses when it's your turn */
+#draw-pile.your-turn-draw .card-back {
+    animation: drawPulse 2s ease-in-out infinite;
+}
+
+@keyframes drawPulse {
+
+    0%,
+    100% {
+        box-shadow: var(--shadow-md);
+    }
+
+    50% {
+        box-shadow: 0 0 18px 6px rgba(255, 215, 0, 0.4), var(--shadow-md);
+    }
+}
+
+/* Deck count badge */
+.deck-count-label {
+    position: absolute;
+    bottom: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(0, 0, 0, 0.4);
+    padding: 2px 8px;
+    border-radius: 8px;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
 .discard-area {
     position: relative;
     display: flex;
@@ -274,20 +328,20 @@ body {
 
 #suit-indicator {
     margin-top: 15px;
-    /* Spacing from card */
-    background: rgba(0, 0, 0, 0.6);
-    padding: 5px 10px;
-    border-radius: 10px;
-    font-size: 0.9rem;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 8px 16px;
+    border-radius: 12px;
+    font-size: 1rem;
     pointer-events: none;
-    /* Let clicks pass through if needed */
     z-index: 10;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-/* Ensure the suit indicator display span has a visible processing */
 #current-suit-display {
     text-transform: capitalize;
     font-weight: bold;
+    font-size: 1.15rem;
     color: var(--accent-color);
 }
 
@@ -379,14 +433,19 @@ body {
 
 #message-area {
     position: absolute;
-    top: -40px;
-    width: 200px;
+    top: -44px;
+    width: 260px;
     text-align: center;
     color: var(--accent-color);
     font-weight: bold;
+    font-size: 0.95rem;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
     pointer-events: none;
     transition: opacity 0.5s ease;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 6px 12px;
+    border-radius: 10px;
+    backdrop-filter: blur(4px);
 }
 
 /* Animations */
@@ -690,10 +749,85 @@ body {
 .flying-card {
     position: fixed;
     z-index: 9999;
-    /* Slow 1.5s animation as requested */
-    transition: transform 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    transition: transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     pointer-events: none;
     box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4);
+}
+
+/* Turn indicator pulse */
+.pulse-turn {
+    animation: pulseTurn 1.5s ease-in-out infinite;
+}
+
+@keyframes pulseTurn {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+}
+
+/* Last card warning badge */
+.last-card-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #fff;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    padding: 2px 8px;
+    border-radius: 8px;
+    margin-top: 4px;
+    animation: lastCardFlash 1s ease-in-out infinite;
+}
+
+@keyframes lastCardFlash {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.7;
+        transform: scale(1.05);
+    }
+}
+
+/* Enhanced game over modal */
+#game-over-modal .modal-content {
+    background: linear-gradient(135deg, #1b5e20, #2e7d32);
+    color: white;
+    padding: 40px;
+}
+
+#game-over-modal #winner-text {
+    font-size: 1.8rem;
+    color: var(--accent-color);
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    margin-bottom: 10px;
+}
+
+#game-over-modal #play-again-btn {
+    margin-top: 20px;
+    padding: 12px 36px;
+    font-size: 1.15rem;
+    background: var(--accent-color);
+    color: #333;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    font-weight: 700;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+#game-over-modal #play-again-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
 }
 
 /* Landing Page Overhaul */

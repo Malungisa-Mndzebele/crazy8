@@ -1,4 +1,4 @@
-console.log("Crazy 8 Client v2.7 Loaded");
+console.log("Crazy 8 Client v2.8 Loaded");
 
 // ==================== CONSTANTS ====================
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
@@ -10,9 +10,9 @@ const BOT_NAMES = ['Hal', 'Chip', 'Data', 'Robo', 'Spark', 'Wire', 'Glitch', 'By
 const CONFIG = {
     CARDS_PER_PLAYER: 5,
     CARDS_PER_PLAYER_TWO_PLAYER: 7,
-    CARD_ANIMATION_MS: 1500,
-    BOT_THINK_MS: 1000,
-    MESSAGE_DISPLAY_MS: 2000,
+    CARD_ANIMATION_MS: 800,
+    BOT_THINK_MS: 900,
+    MESSAGE_DISPLAY_MS: 2500,
     SHAKE_DURATION_MS: 500,
     MAX_VISIBLE_DISCARD: 5,
     MAX_MINI_CARDS: 5
@@ -294,6 +294,9 @@ class Game {
         this.renderOpponents();
         this.renderMyHand();
         this.renderTurnIndicator();
+        this.renderDeckCount();
+        this.highlightPlayableCards();
+        this.updateDrawPileState();
     }
 
     renderDiscardPile() {
@@ -323,7 +326,8 @@ class Game {
     renderSuitIndicator() {
         if (this.gameForcedSuit) {
             this.dom.suitIndicator.classList.remove('hidden');
-            this.dom.currentSuitDisplay.textContent = this.gameForcedSuit;
+            const symbol = SYMBOLS[this.gameForcedSuit] || '';
+            this.dom.currentSuitDisplay.textContent = `${symbol} ${this.gameForcedSuit}`;
             this.dom.currentSuitDisplay.className = ['hearts', 'diamonds'].includes(this.gameForcedSuit) ? 'red' : 'black';
         } else {
             this.dom.suitIndicator.classList.add('hidden');
@@ -340,13 +344,15 @@ class Game {
             const cardCount = p.handCount || p.hand?.length || 0;
             const visualCount = Math.min(cardCount, CONFIG.MAX_MINI_CARDS);
             const miniCards = '<div class="mini-card-back"></div>'.repeat(visualCount);
+            const lastCardWarning = cardCount === 1 ? '<div class="last-card-badge">LAST CARD!</div>' : '';
 
             const el = document.createElement('div');
             el.className = `opponent-card ${i === this.currentTurn ? 'active-turn' : ''}`;
             el.innerHTML = `
                 <div class="avatar robot">👤</div>
                 <div class="name">${p.name}</div>
-                <div class="card-count">${cardCount} Cards</div>
+                <div class="card-count">${cardCount} Card${cardCount !== 1 ? 's' : ''}</div>
+                ${lastCardWarning}
                 <div class="opponent-hand-mini">${miniCards}</div>
             `;
             this.dom.opponentsContainer.appendChild(el);
@@ -375,13 +381,57 @@ class Game {
         if (!currentPlayer) return;
 
         if (this.isMyTurn()) {
-            let text = 'Your Turn';
-            if (this.drawPenalty > 0) text += ` (Play 2 or Draw ${this.drawPenalty})`;
+            let text = '🟢 Your Turn';
+            if (this.drawPenalty > 0) text += ` — Play a 2 or tap deck to draw ${this.drawPenalty}`;
             this.dom.turnIndicator.textContent = text;
             this.dom.turnIndicator.style.color = '#ffd700';
+            this.dom.turnIndicator.classList.add('pulse-turn');
         } else {
             this.dom.turnIndicator.textContent = `${currentPlayer.name}'s Turn`;
             this.dom.turnIndicator.style.color = '#fff';
+            this.dom.turnIndicator.classList.remove('pulse-turn');
+        }
+    }
+
+    renderDeckCount() {
+        const count = this.gameMode === 'pve' ? this.deck.cards.length : '?';
+        let label = this.dom.drawPile.querySelector('.deck-count-label');
+        if (!label) {
+            label = document.createElement('div');
+            label.className = 'deck-count-label';
+            this.dom.drawPile.appendChild(label);
+        }
+        label.textContent = this.gameMode === 'pve' ? `${count}` : '';
+    }
+
+    highlightPlayableCards() {
+        if (!this.isMyTurn() || this.gameOver) return;
+        const myPlayer = this.getMyPlayer();
+        if (!myPlayer) return;
+
+        const handEls = this.dom.playerHand.children;
+        myPlayer.hand.forEach((card, i) => {
+            if (handEls[i]) {
+                const isValid = this.gameMode === 'pve' ? this.isValidMovePVE(card) : this.isValidMoveOnline(card);
+                handEls[i].classList.toggle('playable', isValid);
+                handEls[i].classList.toggle('unplayable', !isValid);
+            }
+        });
+    }
+
+    isValidMoveOnline(card) {
+        if (this.drawPenalty > 0) return card.rank === '2';
+        const top = this.getTopCard();
+        if (!top) return true;
+        const suit = this.gameForcedSuit || top.suit;
+        return card.rank === '8' || card.suit === suit || card.rank === top.rank;
+    }
+
+    updateDrawPileState() {
+        if (this.isMyTurn() && !this.gameOver) {
+            this.dom.drawPile.classList.add('your-turn-draw');
+        } else {
+            this.dom.drawPile.classList.remove('your-turn-draw');
         }
     }
 
@@ -398,10 +448,10 @@ class Game {
         return el;
     }
 
-    showMessage(text) {
+    showMessage(text, duration = CONFIG.MESSAGE_DISPLAY_MS) {
         this.dom.messageArea.textContent = text;
         this.dom.messageArea.style.opacity = '1';
-        setTimeout(() => { this.dom.messageArea.style.opacity = '0'; }, CONFIG.MESSAGE_DISPLAY_MS);
+        setTimeout(() => { this.dom.messageArea.style.opacity = '0'; }, duration);
     }
 
     animatePlayCard(startEl, callback) {
@@ -447,16 +497,20 @@ class Game {
     }
 
     handleCardClick(index) {
+        if (this.gameOver) return;
+        if (!this.isMyTurn()) {
+            this.showMessage("Wait for your turn!", 1200);
+            return;
+        }
+
         const cardEl = this.dom.playerHand.children[index];
 
         if (this.gameMode === 'pve') {
-            if (this.isMyTurn() && !this.gameOver) this.attemptPlayPVE(index);
+            this.attemptPlayPVE(index);
         } else {
-            if (this.isMyTurn() && !this.gameOver) {
-                this.animatePlayCard(cardEl, () => {
-                    this.socket.emit('playCard', { roomId: this.roomId, cardIndex: index });
-                });
-            }
+            this.animatePlayCard(cardEl, () => {
+                this.socket.emit('playCard', { roomId: this.roomId, cardIndex: index });
+            });
         }
     }
 
@@ -526,6 +580,8 @@ class Game {
         } else {
             const cardEl = this.dom.playerHand.children[cardIndex];
             cardEl.classList.add('shake');
+            const reason = this.drawPenalty > 0 ? 'Must play a 2 or draw!' : 'Card doesn\'t match!';
+            this.showMessage(reason, 1500);
             setTimeout(() => cardEl.classList.remove('shake'), CONFIG.SHAKE_DURATION_MS);
         }
     }
@@ -540,13 +596,29 @@ class Game {
         if (card.rank === '7') skip = true;
         if (card.rank === 'J') this.direction *= -1;
 
+        // Show bot action message
+        if (playerIndex !== 0) {
+            const name = this.players[playerIndex].name;
+            let msg = `${name} plays ${card.rank}${SYMBOLS[card.suit]}`;
+            if (card.rank === '2') msg += ' — Draw 2!';
+            else if (card.rank === '7') msg += ' — Skip!';
+            else if (card.rank === 'J') msg += ' — Reverse!';
+            else if (card.rank === '8') msg += ' — Wild!';
+            this.showMessage(msg, 1800);
+        }
+
         // Check win
         if (this.players[playerIndex].hand.length === 0) {
             this.gameOver = true;
             const isHuman = this.players[playerIndex].type === 'human';
-            this.dom.winnerText.textContent = isHuman ? 'You Win!' : `${this.players[playerIndex].name} Wins!`;
+            this.dom.winnerText.textContent = isHuman ? '🎉 You Win! 🎉' : `${this.players[playerIndex].name} Wins!`;
             this.dom.gameOverModal.classList.remove('hidden');
             return;
+        }
+
+        // Last card warning
+        if (this.players[playerIndex].hand.length === 1 && playerIndex !== 0) {
+            this.showMessage(`⚠️ ${this.players[playerIndex].name} has ONE card left!`, 2000);
         }
 
         // Handle 8 (suit selection)
@@ -577,7 +649,10 @@ class Game {
         if (this.deck.isEmpty) this.refillDeckPVE();
         if (!this.deck.isEmpty) {
             this.players[0].hand.push(this.deck.deal());
+            this.showMessage('Drew a card', 1200);
             this.nextTurnPVE();
+        } else {
+            this.showMessage('No cards left to draw!', 1500);
         }
     }
 
@@ -603,6 +678,7 @@ class Game {
 
     botTurnPVE() {
         const bot = this.players[this.currentTurn];
+        const turnIdx = this.currentTurn;
 
         setTimeout(() => {
             // Handle draw penalty
@@ -610,9 +686,10 @@ class Game {
                 const two = bot.hand.find(c => c.rank === '2');
                 if (two) {
                     bot.hand.splice(bot.hand.indexOf(two), 1);
-                    this.playCardPVE(two, this.currentTurn);
+                    this.playCardPVE(two, turnIdx);
                 } else {
-                    this.resolvePVEPenalty(this.currentTurn);
+                    this.showMessage(`${bot.name} draws ${this.drawPenalty} cards!`, 1800);
+                    this.resolvePVEPenalty(turnIdx);
                 }
                 return;
             }
@@ -624,10 +701,13 @@ class Game {
                 const nonEights = valid.filter(c => c.rank !== '8');
                 const card = nonEights.length > 0 ? nonEights[0] : valid[0];
                 bot.hand.splice(bot.hand.indexOf(card), 1);
-                this.playCardPVE(card, this.currentTurn);
+                this.playCardPVE(card, turnIdx);
             } else {
                 if (this.deck.isEmpty) this.refillDeckPVE();
-                if (!this.deck.isEmpty) bot.hand.push(this.deck.deal());
+                if (!this.deck.isEmpty) {
+                    bot.hand.push(this.deck.deal());
+                    this.showMessage(`${bot.name} draws a card`, 1200);
+                }
                 this.nextTurnPVE();
             }
         }, CONFIG.BOT_THINK_MS);

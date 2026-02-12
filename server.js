@@ -290,6 +290,22 @@ function handlePlayerDisconnect(room, playerIndex) {
 
 // ==================== EXPRESS ROUTES ====================
 
+// Security Middleware: Prevent access to sensitive files & directories
+app.use((req, res, next) => {
+    const sensitiveFiles = ['.env', '.gitignore', 'package.json', 'package-lock.json', 'server.js', 'render.yaml', 'README.md', 'test-game.js', 'served_index.html'];
+    const blockedDirs = ['/config', '/models', '/node_modules', '/.git', '/.github'];
+
+    if (sensitiveFiles.some(file => req.path.includes(file)) ||
+        blockedDirs.some(dir => req.path.startsWith(dir)) ||
+        req.path.startsWith('/.')) {
+        return res.status(403).send('Forbidden');
+    }
+    next();
+});
+
+// Serve static files (HTML, CSS, JS, Images, SEO files)
+app.use(express.static(__dirname));
+
 app.get('/health', (req, res) => {
     res.json({
         status: 'Crazy 8 Backend v2.7 Running',
@@ -305,6 +321,11 @@ app.get('/api/leaderboard', async (req, res) => {
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
+});
+
+// Serve index.html for the root route explicitly (though express.static covers it, this is safe)
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/index.html');
 });
 
 // ==================== SOCKET.IO EVENT HANDLERS ====================

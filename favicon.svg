@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#e94560;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0f3460;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <!-- Card shape -->
+  <rect x="10" y="5" width="80" height="90" rx="12" ry="12" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="14" y="9" width="72" height="82" rx="9" ry="9" fill="none" stroke="#fff" stroke-width="1.5" opacity="0.3"/>
+  <!-- Big 8 -->
+  <text x="50" y="68" font-family="Arial Black, Impact, sans-serif" font-size="60" font-weight="900" fill="#fff" text-anchor="middle" letter-spacing="-2">8</text>
+  <!-- Small corner 8 -->
+  <text x="22" y="25" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#fff" text-anchor="middle" opacity="0.8">8</text>
+  <!-- Small diamond suit -->
+  <text x="22" y="38" font-family="Arial, sans-serif" font-size="12" fill="#fff" text-anchor="middle" opacity="0.7">♦</text>
+</svg>

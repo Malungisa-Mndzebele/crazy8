@@ -1,0 +1,9 @@
+# Robots.txt for Crazy 8s - khasinogaming.com
+User-agent: *
+Allow: /
+
+# Sitemaps
+Sitemap: https://khasinogaming.com/world/sitemap.xml
+
+# Crawl-delay (optional, be kind to the server)
+Crawl-delay: 10

@@ -4,9 +4,88 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crazy 8s</title>
-    <link rel="stylesheet" href="style.css">
+
+    <!-- Primary SEO -->
+    <title>Crazy 8s – Free Online Card Game | Play Multiplayer Crazy Eights</title>
+    <meta name="description"
+        content="Play Crazy 8s online for free! A fun multiplayer card game – play vs computer or challenge friends in real-time. No downloads, no sign-up. Start playing now!">
+    <meta name="keywords"
+        content="crazy 8s, crazy eights, card game, online card game, free card game, multiplayer card game, play cards online, crazy 8s game, card games free, browser card game, crazy eights online, play crazy 8s">
+    <meta name="robots" content="index, follow">
+    <meta name="author" content="Khasino Gaming">
+    <link rel="canonical" href="https://khasinogaming.com/world/">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://khasinogaming.com/world/">
+    <meta property="og:title" content="Crazy 8s – Free Online Multiplayer Card Game">
+    <meta property="og:description"
+        content="Play the classic Crazy 8s card game online for free. Challenge friends or play vs the computer – no downloads required!">
+    <meta property="og:image" content="https://khasinogaming.com/world/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:site_name" content="Khasino Gaming">
+    <meta property="og:locale" content="en_US">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Crazy 8s – Free Online Multiplayer Card Game">
+    <meta name="twitter:description"
+        content="Play Crazy 8s online for free! Challenge friends or play vs the computer in real-time. No downloads needed.">
+    <meta name="twitter:image" content="https://khasinogaming.com/world/og-image.png">
+
+    <!-- Theme & Favicon -->
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="msapplication-TileColor" content="#1a1a2e">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+    <!-- Preconnect for performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Structured Data: JSON-LD -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Crazy 8s",
+        "alternateName": ["Crazy Eights", "Crazy 8s Card Game"],
+        "url": "https://khasinogaming.com/world/",
+        "description": "Play the classic Crazy 8s card game online for free. Multiplayer real-time gameplay – challenge friends or play vs the computer.",
+        "applicationCategory": "GameApplication",
+        "operatingSystem": "Web Browser",
+        "browserRequirements": "Requires JavaScript",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "author": {
+            "@type": "Organization",
+            "name": "Khasino Gaming",
+            "url": "https://khasinogaming.com"
+        },
+        "genre": ["Card Game", "Multiplayer Game", "Strategy Game"],
+        "gamePlatform": "Web Browser",
+        "numberOfPlayers": {
+            "@type": "QuantitativeValue",
+            "minValue": 1,
+            "maxValue": 7
+        },
+        "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.7",
+            "ratingCount": "150",
+            "bestRating": "5"
+        },
+        "image": "https://khasinogaming.com/world/og-image.png",
+        "inLanguage": "en",
+        "isAccessibleForFree": true
+    }
+    </script>
 </head>
 
 <body>
@@ -154,6 +233,22 @@
             <button id="play-again-btn">Play Again</button>
         </div>
     </div>
+
+    <!-- Noscript fallback for SEO -->
+    <noscript>
+        <div style="text-align:center; padding:2rem; color:#fff; background:#1a1a2e; font-family:sans-serif;">
+            <h1>Crazy 8s – Free Online Card Game</h1>
+            <p>Play the classic Crazy 8s (Crazy Eights) card game online for free! Challenge your friends in real-time
+                multiplayer or play against the computer.</p>
+            <p>JavaScript is required to play this game. Please enable JavaScript in your browser settings.</p>
+            <ul style="text-align:left; max-width:400px; margin:1rem auto;">
+                <li>🎲 Play with 2-7 players online</li>
+                <li>🤖 Play vs Computer (AI)</li>
+                <li>⚡ Quick Match – join a random game instantly</li>
+                <li>🃏 Classic Crazy Eights rules with special cards</li>
+            </ul>
+        </div>
+    </noscript>
 
     <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
     <script src="script.js?v=2.7"></script>

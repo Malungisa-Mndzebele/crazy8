@@ -1033,3 +1033,35 @@ body {
     margin: 0;
     text-align: center;
 }
+
+/* Rules Page: Intro paragraph */
+.rules-intro {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: #cbd5e1;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Rules Page: CTA link */
+.rules-cta {
+    margin-top: 2rem;
+    padding: 1.25rem;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(79, 70, 229, 0.2));
+    border-radius: 12px;
+    border: 1px solid rgba(79, 70, 229, 0.3);
+    text-align: center;
+}
+
+.rules-cta a {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-size: 1.15rem;
+    transition: color 0.2s;
+}
+
+.rules-cta a:hover {
+    color: #fff;
+    text-decoration: underline;
+}

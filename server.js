@@ -6,7 +6,7 @@ const { connectDB, getSequelize, isConnected } = require('./config/db');
 const { initPlayerModel, getLeaderboard, recordGameResult } = require('./models/Player');
 const { initGameModel, saveGameResult } = require('./models/Game');
 
-console.log("Starting Crazy 8 Server v2.7...");
+console.log("Starting Crazy 8 Server v2.9...");
 
 // ==================== GAME CONSTANTS ====================
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
@@ -308,7 +308,7 @@ app.use(express.static(__dirname));
 
 app.get('/health', (req, res) => {
     res.json({
-        status: 'Crazy 8 Backend v2.7 Running',
+        status: 'Crazy 8 Backend v2.9 Running',
         database: dbConnected ? 'PostgreSQL connected' : 'not connected (in-memory mode)',
         activeRooms: Object.keys(rooms).length
     });

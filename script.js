@@ -1,4 +1,4 @@
-console.log("Crazy 8 Client v2.8 Loaded");
+console.log("Crazy 8 Client v2.9 Loaded");
 
 // ==================== CONSTANTS ====================
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
@@ -10,12 +10,16 @@ const BOT_NAMES = ['Hal', 'Chip', 'Data', 'Robo', 'Spark', 'Wire', 'Glitch', 'By
 const CONFIG = {
     CARDS_PER_PLAYER: 5,
     CARDS_PER_PLAYER_TWO_PLAYER: 7,
-    CARD_ANIMATION_MS: 800,
+    CARD_ANIMATION_MS: 450,
+    DRAW_ANIMATION_MS: 400,
+    DEAL_STAGGER_MS: 70,
     BOT_THINK_MS: 900,
     MESSAGE_DISPLAY_MS: 2500,
     SHAKE_DURATION_MS: 500,
     MAX_VISIBLE_DISCARD: 5,
-    MAX_MINI_CARDS: 5
+    MAX_MINI_CARDS: 5,
+    CONFETTI_PIECES: 80,
+    CONFETTI_LIFETIME_MS: 6000
 };
 
 const BACKEND_URL = (() => {
@@ -77,6 +81,11 @@ class Game {
         this.drawPenalty = 0;
         this.gameForcedSuit = null;
         this.gameOver = false;
+
+        // Animation tracking (so re-renders only animate what changed)
+        this.prevHandIds = new Set();
+        this.prevDiscardLen = 0;
+        this.initialDealPending = false;
 
         // Networking
         this.gameMode = 'pve';
@@ -235,6 +244,9 @@ class Game {
         // Game events
         this.socket.on('gameStarted', () => {
             this.gameMode = 'online';
+            this.initialDealPending = true;
+            this.prevHandIds = new Set();
+            this.prevDiscardLen = 0;
             this.dom.waitingRoomModal.classList.add('hidden');
             this.dom.landingPage.classList.add('hidden');
         });
@@ -243,8 +255,8 @@ class Game {
 
         this.socket.on('gameOver', ({ winner, reason }) => {
             const message = reason ? `${winner} Wins! (${reason})` : `${winner} Wins!`;
-            this.dom.winnerText.textContent = message;
-            this.dom.gameOverModal.classList.remove('hidden');
+            const iWon = this.getMyPlayer()?.name === winner;
+            this.showGameOver(iWon ? `🎉 ${message} 🎉` : message, iWon);
         });
 
         // Disconnect events
@@ -299,9 +311,22 @@ class Game {
         this.updateDrawPileState();
     }
 
+    // Deterministic pseudo-random per card so the discard scatter doesn't jitter on re-renders
+    cardScatter(card) {
+        let h = 0;
+        for (const ch of card.id) h = ((h * 31) + ch.charCodeAt(0)) | 0;
+        const unit = (seed) => (((h ^ seed) % 1000) / 1000) - 0.5;
+        return {
+            rotation: unit(0x9e37) * 30,
+            offsetX: unit(0x85eb) * 20,
+            offsetY: unit(0xc2b2) * 10
+        };
+    }
+
     renderDiscardPile() {
         this.dom.discardPile.innerHTML = '';
         const startIdx = Math.max(0, this.discardPile.length - CONFIG.MAX_VISIBLE_DISCARD);
+        const discardGrew = this.discardPile.length > this.prevDiscardLen;
 
         for (let i = startIdx; i < this.discardPile.length; i++) {
             const cardEl = this.createCardElement(this.discardPile[i]);
@@ -310,10 +335,9 @@ class Game {
             if (isTop) {
                 cardEl.style.zIndex = 100;
                 cardEl.classList.add('top-card');
+                if (discardGrew) cardEl.classList.add('drop-in');
             } else {
-                const rotation = (Math.random() - 0.5) * 30;
-                const offsetX = (Math.random() - 0.5) * 20;
-                const offsetY = (Math.random() - 0.5) * 10;
+                const { rotation, offsetX, offsetY } = this.cardScatter(this.discardPile[i]);
                 cardEl.style.transform = `rotate(${rotation}deg) translate(${offsetX}px, ${offsetY}px)`;
                 cardEl.style.zIndex = i - startIdx;
             }
@@ -321,6 +345,8 @@ class Game {
             cardEl.style.position = 'absolute';
             this.dom.discardPile.appendChild(cardEl);
         }
+
+        this.prevDiscardLen = this.discardPile.length;
     }
 
     renderSuitIndicator() {
@@ -348,6 +374,7 @@ class Game {
 
             const el = document.createElement('div');
             el.className = `opponent-card ${i === this.currentTurn ? 'active-turn' : ''}`;
+            el.dataset.playerIndex = i;
             el.innerHTML = `
                 <div class="avatar robot">👤</div>
                 <div class="name">${p.name}</div>
@@ -370,9 +397,18 @@ class Game {
             const el = this.createCardElement(card);
             el.dataset.index = index;
             el.onclick = () => this.handleCardClick(index);
+
+            if (this.initialDealPending) {
+                el.classList.add('deal-anim');
+                el.style.animationDelay = `${index * CONFIG.DEAL_STAGGER_MS}ms`;
+            } else if (!this.prevHandIds.has(card.id)) {
+                el.classList.add('card-enter');
+            }
             this.dom.playerHand.appendChild(el);
         });
 
+        this.prevHandIds = new Set(myPlayer.hand.map(c => c.id));
+        this.initialDealPending = false;
         this.dom.playerCountDisplay.textContent = myPlayer.hand.length;
     }
 
@@ -439,7 +475,7 @@ class Game {
 
     createCardElement(card) {
         const el = document.createElement('div');
-        el.className = `card ${card.color} deal-anim`;
+        el.className = `card ${card.color}`;
         el.innerHTML = `
             <div class="card-top">${card.rank}<span>${card.symbol}</span></div>
             <div class="card-center">${card.symbol}</div>
@@ -482,6 +518,88 @@ class Game {
         setTimeout(() => { clone.remove(); callback(); }, CONFIG.CARD_ANIMATION_MS);
     }
 
+    animateDrawCard(callback) {
+        const pileBack = this.dom.drawPile.querySelector('.card-back');
+        if (!pileBack) { if (callback) callback(); return; }
+
+        const rect = pileBack.getBoundingClientRect();
+        const handRect = this.dom.playerHand.getBoundingClientRect();
+
+        const clone = document.createElement('div');
+        clone.className = 'card-back flying-card flying-fast';
+        Object.assign(clone.style, {
+            position: 'fixed',
+            left: `${rect.left}px`,
+            top: `${rect.top}px`,
+            width: `${rect.width}px`,
+            height: `${rect.height}px`
+        });
+
+        document.body.appendChild(clone);
+        clone.offsetHeight; // Force reflow
+
+        const deltaX = (handRect.left + handRect.width / 2) - (rect.left + rect.width / 2);
+        const deltaY = (handRect.top + handRect.height / 2) - (rect.top + rect.height / 2);
+        clone.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(0.9)`;
+        clone.style.opacity = '0.4';
+
+        setTimeout(() => { clone.remove(); if (callback) callback(); }, CONFIG.DRAW_ANIMATION_MS);
+    }
+
+    animateCardFromOpponent(playerIndex, card, callback) {
+        const source = this.dom.opponentsContainer.querySelector(`[data-player-index="${playerIndex}"]`);
+        if (!source) { callback(); return; }
+
+        const srcRect = source.getBoundingClientRect();
+        const tgtRect = this.dom.discardPile.getBoundingClientRect();
+
+        const clone = this.createCardElement(card);
+        clone.classList.add('flying-card');
+        const startLeft = srcRect.left + srcRect.width / 2 - tgtRect.width / 2;
+        const startTop = srcRect.top + srcRect.height / 2 - tgtRect.height / 2;
+        Object.assign(clone.style, {
+            position: 'fixed',
+            left: `${startLeft}px`,
+            top: `${startTop}px`,
+            width: `${tgtRect.width}px`,
+            height: `${tgtRect.height}px`,
+            margin: '0',
+            transform: 'scale(0.4)',
+            opacity: '0.5'
+        });
+
+        document.body.appendChild(clone);
+        clone.offsetHeight; // Force reflow
+
+        const deltaX = (tgtRect.left + tgtRect.width / 2) - (srcRect.left + srcRect.width / 2);
+        const deltaY = (tgtRect.top + tgtRect.height / 2) - (srcRect.top + srcRect.height / 2);
+        clone.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(1)`;
+        clone.style.opacity = '1';
+
+        setTimeout(() => { clone.remove(); callback(); }, CONFIG.CARD_ANIMATION_MS);
+    }
+
+    showGameOver(message, celebrate = false) {
+        this.gameOver = true;
+        this.dom.winnerText.textContent = message;
+        this.dom.gameOverModal.classList.remove('hidden');
+        if (celebrate) this.spawnConfetti();
+    }
+
+    spawnConfetti() {
+        const colors = ['#ffd700', '#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#f97316'];
+        for (let i = 0; i < CONFIG.CONFETTI_PIECES; i++) {
+            const piece = document.createElement('div');
+            piece.className = 'confetti-piece';
+            piece.style.left = `${Math.random() * 100}vw`;
+            piece.style.background = colors[i % colors.length];
+            piece.style.animationDuration = `${2.5 + Math.random() * 2}s`;
+            piece.style.animationDelay = `${Math.random() * 0.8}s`;
+            document.body.appendChild(piece);
+            setTimeout(() => piece.remove(), CONFIG.CONFETTI_LIFETIME_MS);
+        }
+    }
+
     // ==================== INTERACTION HANDLERS ====================
 
     handleDrawClick() {
@@ -492,7 +610,11 @@ class Game {
             if (this.drawPenalty > 0) this.resolvePVEPenalty(0);
             else this.humanDrawPVE();
         } else {
-            this.socket.emit('drawCard', this.roomId);
+            if (!this.isMyTurn()) {
+                this.showMessage("Wait for your turn!", 1200);
+                return;
+            }
+            this.animateDrawCard(() => this.socket.emit('drawCard', this.roomId));
         }
     }
 
@@ -503,15 +625,28 @@ class Game {
             return;
         }
 
-        const cardEl = this.dom.playerHand.children[index];
-
         if (this.gameMode === 'pve') {
             this.attemptPlayPVE(index);
         } else {
-            this.animatePlayCard(cardEl, () => {
+            const card = this.getMyPlayer()?.hand[index];
+            if (!card) return;
+            if (!this.isValidMoveOnline(card)) {
+                this.rejectCard(index);
+                return;
+            }
+            this.animatePlayCard(this.dom.playerHand.children[index], () => {
                 this.socket.emit('playCard', { roomId: this.roomId, cardIndex: index });
             });
         }
+    }
+
+    rejectCard(index) {
+        const cardEl = this.dom.playerHand.children[index];
+        if (!cardEl) return;
+        cardEl.classList.add('shake');
+        const reason = this.drawPenalty > 0 ? 'Must play a 2 or draw!' : 'Card doesn\'t match!';
+        this.showMessage(reason, 1500);
+        setTimeout(() => cardEl.classList.remove('shake'), CONFIG.SHAKE_DURATION_MS);
     }
 
     // ==================== PVE GAME LOGIC ====================
@@ -525,6 +660,9 @@ class Game {
         this.drawPenalty = 0;
         this.players = [];
         this.discardPile = [];
+        this.initialDealPending = true;
+        this.prevHandIds = new Set();
+        this.prevDiscardLen = 0;
 
         this.dom.landingPage.classList.add('hidden');
         this.deck.reset();
@@ -578,11 +716,7 @@ class Game {
                 this.playCardPVE(card, 0);
             });
         } else {
-            const cardEl = this.dom.playerHand.children[cardIndex];
-            cardEl.classList.add('shake');
-            const reason = this.drawPenalty > 0 ? 'Must play a 2 or draw!' : 'Card doesn\'t match!';
-            this.showMessage(reason, 1500);
-            setTimeout(() => cardEl.classList.remove('shake'), CONFIG.SHAKE_DURATION_MS);
+            this.rejectCard(cardIndex);
         }
     }
 
@@ -609,10 +743,9 @@ class Game {
 
         // Check win
         if (this.players[playerIndex].hand.length === 0) {
-            this.gameOver = true;
+            this.updateUI();
             const isHuman = this.players[playerIndex].type === 'human';
-            this.dom.winnerText.textContent = isHuman ? '🎉 You Win! 🎉' : `${this.players[playerIndex].name} Wins!`;
-            this.dom.gameOverModal.classList.remove('hidden');
+            this.showGameOver(isHuman ? '🎉 You Win! 🎉' : `${this.players[playerIndex].name} Wins!`, isHuman);
             return;
         }
 
@@ -647,23 +780,30 @@ class Game {
 
     humanDrawPVE() {
         if (this.deck.isEmpty) this.refillDeckPVE();
-        if (!this.deck.isEmpty) {
+        if (this.deck.isEmpty) {
+            this.showMessage('No cards left to draw!', 1500);
+            return;
+        }
+        this.animateDrawCard(() => {
             this.players[0].hand.push(this.deck.deal());
             this.showMessage('Drew a card', 1200);
             this.nextTurnPVE();
-        } else {
-            this.showMessage('No cards left to draw!', 1500);
-        }
+        });
     }
 
     resolvePVEPenalty(idx) {
         const count = this.drawPenalty;
         this.drawPenalty = 0;
-        for (let i = 0; i < count; i++) {
-            if (this.deck.isEmpty) this.refillDeckPVE();
-            if (!this.deck.isEmpty) this.players[idx].hand.push(this.deck.deal());
-        }
-        this.nextTurnPVE();
+        const drawAll = () => {
+            for (let i = 0; i < count; i++) {
+                if (this.deck.isEmpty) this.refillDeckPVE();
+                if (!this.deck.isEmpty) this.players[idx].hand.push(this.deck.deal());
+            }
+            this.nextTurnPVE();
+        };
+        // Animate the draw for the human player; bots resolve instantly
+        if (idx === 0) this.animateDrawCard(drawAll);
+        else drawAll();
     }
 
     refillDeckPVE() {
@@ -685,8 +825,7 @@ class Game {
             if (this.drawPenalty > 0) {
                 const two = bot.hand.find(c => c.rank === '2');
                 if (two) {
-                    bot.hand.splice(bot.hand.indexOf(two), 1);
-                    this.playCardPVE(two, turnIdx);
+                    this.playBotCard(bot, two, turnIdx);
                 } else {
                     this.showMessage(`${bot.name} draws ${this.drawPenalty} cards!`, 1800);
                     this.resolvePVEPenalty(turnIdx);
@@ -700,8 +839,7 @@ class Game {
                 // Strategy: play non-wild cards first, save 8s
                 const nonEights = valid.filter(c => c.rank !== '8');
                 const card = nonEights.length > 0 ? nonEights[0] : valid[0];
-                bot.hand.splice(bot.hand.indexOf(card), 1);
-                this.playCardPVE(card, turnIdx);
+                this.playBotCard(bot, card, turnIdx);
             } else {
                 if (this.deck.isEmpty) this.refillDeckPVE();
                 if (!this.deck.isEmpty) {
@@ -711,6 +849,11 @@ class Game {
                 this.nextTurnPVE();
             }
         }, CONFIG.BOT_THINK_MS);
+    }
+
+    playBotCard(bot, card, turnIdx) {
+        bot.hand.splice(bot.hand.indexOf(card), 1);
+        this.animateCardFromOpponent(turnIdx, card, () => this.playCardPVE(card, turnIdx));
     }
 
     botPickSuitPVE(idx) {
@@ -735,4 +878,4 @@ class Game {
 }
 
 // ==================== INIT ====================
-window.onload = () => new Game();
+window.onload = () => { window.game = new Game(); };

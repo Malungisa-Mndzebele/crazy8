@@ -10,6 +10,37 @@
  */
 
 const { io: ioClient } = require('socket.io-client');
+const { spawn } = require('child_process');
+const net = require('net');
+
+// ==================== LOCAL SERVER BOOTSTRAP ====================
+const SERVER_PORT = 3001;
+
+function isServerUp(port) {
+    return new Promise((res) => {
+        const sock = net.createConnection({ port, host: '127.0.0.1' });
+        sock.once('connect', () => { sock.destroy(); res(true); });
+        sock.once('error', () => res(false));
+        sock.setTimeout(1000, () => { sock.destroy(); res(false); });
+    });
+}
+
+/** Starts server.js as a child process if nothing is listening on the test port. */
+async function ensureServer() {
+    if (await isServerUp(SERVER_PORT)) return null;
+    console.log('  ⏳ No server on port ' + SERVER_PORT + ' — starting one for multiplayer tests...');
+    const child = spawn(process.execPath, ['server.js'], {
+        cwd: __dirname,
+        env: { ...process.env, PORT: String(SERVER_PORT), NODE_ENV: 'test' },
+        stdio: 'ignore'
+    });
+    for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 500));
+        if (await isServerUp(SERVER_PORT)) { console.log('  ✅ Test server ready'); return child; }
+    }
+    child.kill();
+    throw new Error('Could not start local server for multiplayer tests');
+}
 
 // ==================== SHARED CONSTANTS ====================
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
@@ -498,7 +529,15 @@ async function main() {
 
     runUnitTests();
     runPveTests();
+
+    let serverProc = null;
+    try {
+        serverProc = await ensureServer();
+    } catch (err) {
+        console.log(`  ⚠️ ${err.message}`);
+    }
     await runMultiplayerTests();
+    if (serverProc) serverProc.kill();
 
     section('FINAL RESULTS');
     console.log(`  Passed: ${totalPassed}`);

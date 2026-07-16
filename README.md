@@ -1,6 +1,6 @@
-# 🃏 Crazy 8s - Multiplayer Card Game
+# 🃏 Crazy 8s - Card Game
 
-A modern, web-based implementation of the classic card game **Crazy 8s**, featuring both single-player (vs AI) and real-time online multiplayer modes with persistent player stats.
+A modern, **fully serverless** web implementation of the classic card game **Crazy 8s**, featuring single-player (vs AI) and peer-to-peer online multiplayer. No backend required — the whole game is static files plus WebRTC.
 
 ## 🎮 Play Now
 
@@ -9,8 +9,8 @@ A modern, web-based implementation of the classic card game **Crazy 8s**, featur
 ## ✨ Features
 
 ### Game Modes
-- **🤖 vs Computer:** Play locally against smart AI bots (2-7 players)
-- **🌐 Online Multiplayer:** Create private rooms and invite friends to play in real-time
+- **🤖 vs Computer:** Play against smart AI bots (2-7 players), 100% in your browser
+- **🌐 Online Multiplayer:** Create a room, share the code, and play with friends peer-to-peer — no server, no sign-up
 
 ### Special Cards
 | Card | Name | Effect |
@@ -21,10 +21,11 @@ A modern, web-based implementation of the classic card game **Crazy 8s**, featur
 | **J** | Reverse | Reverses the direction of play |
 
 ### Technical Features
-- **Real-Time Multiplayer:** Powered by Socket.io for instant game updates
+- **Serverless Multiplayer:** Peer-to-peer over WebRTC (via [PeerJS](https://peerjs.com/)) — the room host runs the authoritative game engine in-browser and relays state directly to peers
+- **No Backend:** Deploys as pure static files to any host (no Node server, no database)
+- **Anti-Cheat:** Each player only ever receives their own hand
+- **Resilient:** Application-level heartbeats detect silent disconnects (closed tabs / dropped connections) that WebRTC alone misses
 - **Responsive Design:** Works on desktop and mobile devices
-- **Player Stats:** PostgreSQL database tracks wins, losses, and games played
-- **Leaderboard:** API endpoint for top players
 
 ## 🚀 How to Play
 
@@ -37,115 +38,58 @@ A modern, web-based implementation of the classic card game **Crazy 8s**, featur
 
 ```
 crazy8/
-├── server.js           # Backend server (Socket.io + Express)
-├── script.js           # Frontend game logic
 ├── index.html          # Main game page
-├── style.css           # Game styling
-├── config/
-│   └── db.js           # PostgreSQL connection
-├── models/
-│   ├── Player.js       # Player model (stats tracking)
-│   └── Game.js         # Game session model
-├── package.json        # Dependencies
-└── render.yaml         # Render deployment config
+├── script.js           # Frontend UI + P2P networking (PeerJS)
+├── game-engine.js      # Shared host-authoritative rules engine
+├── style.css           # Game styling & animations
+├── serve.js            # Minimal static dev server (Node built-ins only)
+├── test-game.js        # Full test suite (unit + PvE sims + engine)
+├── rules.html          # How-to-play page
+└── package.json        # Scripts only — zero runtime dependencies
 ```
+
+## 🌐 How Online Play Works (P2P)
+
+There is **no game server**. When you create a room:
+
+1. Your browser registers on the free public **PeerJS** signaling broker under a short room code.
+2. Friends who enter that code open a direct **WebRTC** data connection to you (the host).
+3. Your browser runs `game-engine.js` as the **authoritative** game and relays state to each peer; peers send their moves back to you.
+4. Heartbeats keep everyone in sync and detect anyone who drops.
+
+This means the game works anywhere you can serve static files — no Node process, no database.
 
 ## 💻 Local Development
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) v18+
-- PostgreSQL (optional - runs without DB in memory mode)
+- [Node.js](https://nodejs.org/) v18+ (only to run the local static server and tests)
 
 ### Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/Malungisa-Mndzebele/crazy8.git
 cd crazy8
 
-# Install dependencies
-npm install
+# No dependencies to install — start the static server
+npm start          # → http://localhost:3001
 
-# Create .env file (optional, for database)
-cp .env.example .env
-# Edit .env and add your DATABASE_URL
-
-# Start the server
-npm start
+# Run the full test suite
+npm test
 ```
 
-### Environment Variables
+> Online play needs internet access to reach the public PeerJS broker. PvE works fully offline.
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `DATABASE_URL` | PostgreSQL connection string | No (graceful fallback) |
-| `PORT` | Server port (default: 3001) | No |
+## 🚀 Deployment
 
-## 🌐 Deployment on Render
-
-### Backend (Web Service)
-
-1. Create a **New Web Service** on [Render](https://render.com/)
-2. Connect your GitHub repository
-3. Configure:
-   - **Runtime:** Node
-   - **Build Command:** `npm install`
-   - **Start Command:** `npm start`
-4. Deploy!
-
-### Database (PostgreSQL)
-
-1. Create a **New PostgreSQL** database on Render
-2. Copy the **Internal Database URL**
-3. Add to your Web Service as environment variable:
-   - Key: `DATABASE_URL`
-   - Value: `postgres://...` (your connection string)
-
-### Frontend Hosting
-
-The frontend files (`index.html`, `script.js`, `style.css`) can be hosted on:
-- Same Render service (enable static file serving)
-- Separate static hosting (GitHub Pages, Netlify, etc.)
-- Your own domain
-
-## 🔌 API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Server status + DB connection |
-| `/api/leaderboard` | GET | Top 10 players by wins |
+Because the app is 100% static, deploy the files to any static host — GitHub Pages, Netlify, Cloudflare Pages, or plain FTP. This repo auto-deploys to `khasinogaming.com` via the FTP GitHub Action in `.github/workflows/ftp-deploy.yml` on every push to `main`.
 
 ## 🔧 Tech Stack
 
 | Layer | Technology |
 |-------|------------|
 | **Frontend** | HTML5, CSS3, Vanilla JavaScript |
-| **Backend** | Node.js, Express.js |
-| **Real-Time** | Socket.io |
-| **Database** | PostgreSQL + Sequelize ORM |
-| **Hosting** | Render (Web Service + Database) |
-
-## 📊 Database Schema
-
-### Players Table
-```sql
-- id (PRIMARY KEY)
-- username (UNIQUE)
-- gamesPlayed, gamesWon, gamesLost
-- isGuest, email, passwordHash
-- createdAt, updatedAt, lastActiveAt
-```
-
-### Games Table
-```sql
-- id (PRIMARY KEY)
-- roomId (UNIQUE)
-- status (waiting/in_progress/completed/abandoned)
-- playerNames (ARRAY)
-- winnerName
-- startedAt, endedAt
-- createdAt, updatedAt
-```
+| **Multiplayer** | WebRTC (peer-to-peer) via PeerJS |
+| **Hosting** | Any static host (FTP / GitHub Pages / Netlify / …) |
 
 ## 🎯 Game Rules
 

@@ -106,7 +106,7 @@
                 <div class="landing-header">
                     <a href="rules.html" class="utility-btn">How to Play</a>
                     <h1 class="landing-title">Crazy 8s</h1>
-                    <p class="landing-tagline">Create or join a game room to play with friends online.</p>
+                    <p class="landing-tagline">Play vs the computer, or share a room code and play with friends — peer-to-peer, no servers.</p>
                 </div>
 
                 <div class="landing-body">
@@ -138,16 +138,7 @@
                     <div class="divider">OR</div>
 
                     <div class="landing-section">
-                        <button id="landing-quickmatch-btn" class="primary-btn quickmatch-style">
-                            <span>⚡</span> Quick Match
-                        </button>
-                        <p class="quickmatch-hint">Join a random available room</p>
-                    </div>
-
-                    <div class="divider">OR</div>
-
-                    <div class="landing-section">
-                        <label class="landing-label">Join Existing Game</label>
+                        <label class="landing-label">Join a Friend's Game</label>
                         <div class="join-row">
                             <input type="text" id="landing-room-input" class="landing-input" placeholder="Room Code">
                             <button id="landing-join-btn" class="primary-btn">Join</button>
@@ -161,8 +152,13 @@
         <div id="waiting-room-modal" class="modal hidden">
             <div class="modal-content">
                 <h2>Waiting Room</h2>
-                <p>Room ID: <strong id="display-room-id">...</strong></p>
+                <p class="room-code-hint">Share this room code with friends:</p>
+                <div class="room-code-box">
+                    <strong id="display-room-id">...</strong>
+                    <button id="copy-room-btn" class="copy-btn" title="Copy code">📋</button>
+                </div>
                 <div id="player-list-display"></div>
+                <p id="waiting-status" class="waiting-status">Waiting for players…</p>
                 <button id="start-online-game-btn" class="hidden">Start Game</button>
             </div>
         </div>
@@ -250,8 +246,9 @@
         </div>
     </noscript>
 
-    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
-    <script src="script.js?v=2.9"></script>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script src="game-engine.js?v=3.0"></script>
+    <script src="script.js?v=3.0"></script>
 </body>
 
 </html>

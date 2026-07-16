@@ -1080,22 +1080,92 @@ body {
     padding-right: 1.5rem;
 }
 
-/* Quick Match Button */
-.primary-btn.quickmatch-style {
-    background: linear-gradient(135deg, #f59e0b, #ef4444);
+/* Waiting Room: shareable room code */
+.room-code-hint {
+    color: #555;
+    font-size: 0.9rem;
+    margin: 0 0 8px;
+}
+
+.room-code-box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.room-code-box strong {
+    font-size: 1.8rem;
+    letter-spacing: 0.15em;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #1b5e20;
+    background: #e8f5e9;
+    padding: 8px 18px;
+    border-radius: 12px;
+    border: 2px dashed #66bb6a;
+}
+
+.copy-btn {
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 8px 12px;
     font-size: 1.1rem;
-    padding: 1rem;
+    cursor: pointer;
+    transition: transform 0.15s, background 0.15s;
 }
 
-.primary-btn.quickmatch-style:hover {
-    background: linear-gradient(135deg, #fbbf24, #f87171);
+.copy-btn:hover {
+    background: #e0e0e0;
+    transform: scale(1.08);
 }
 
-.quickmatch-hint {
-    color: #94a3b8;
-    font-size: 0.8rem;
-    margin: 0;
-    text-align: center;
+.waiting-status {
+    color: #666;
+    font-size: 0.9rem;
+    margin: 14px 0 0;
+    font-style: italic;
+}
+
+#player-list-display {
+    margin: 10px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+#player-list-display > div {
+    background: #f5f5f5;
+    padding: 8px 14px;
+    border-radius: 10px;
+    color: #333;
+    font-weight: 600;
+}
+
+.you-tag {
+    color: #2e7d32;
+    font-weight: 700;
+}
+
+#start-online-game-btn {
+    margin-top: 18px;
+    width: 100%;
+    padding: 12px;
+    background: var(--primary-btn-color);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter 0.2s, transform 0.2s;
+}
+
+#start-online-game-btn:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
 }
 
 /* Rules Page: Intro paragraph */

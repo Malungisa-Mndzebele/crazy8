@@ -1,4 +1,4 @@
-console.log("Crazy 8 Client v2.9 Loaded");
+console.log("Crazy 8 Client v3.0 Loaded (serverless / P2P)");
 
 // ==================== CONSTANTS ====================
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
@@ -6,6 +6,15 @@ const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
 const SYMBOLS = { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' };
 const SPECIAL_CARDS = ['8', '2', '7', 'J'];
 const BOT_NAMES = ['Hal', 'Chip', 'Data', 'Robo', 'Spark', 'Wire', 'Glitch', 'Byte'];
+
+// PeerJS namespace prefix — keeps our room codes from colliding with other
+// apps on the shared public PeerJS broker.
+const PEER_PREFIX = 'khasino-crazy8-';
+const PEER_CONNECT_TIMEOUT_MS = 12000;
+// WebRTC doesn't reliably signal an abruptly-closed tab, so host & peers
+// exchange heartbeats and treat silence past the timeout as a disconnect.
+const HEARTBEAT_INTERVAL_MS = 3000;
+const PEER_TIMEOUT_MS = 10000;
 
 const CONFIG = {
     CARDS_PER_PLAYER: 5,
@@ -21,11 +30,6 @@ const CONFIG = {
     CONFETTI_PIECES: 80,
     CONFETTI_LIFETIME_MS: 6000
 };
-
-const BACKEND_URL = (() => {
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    return isLocal ? 'http://localhost:3001' : 'https://crazy-8-game-g9ju.onrender.com';
-})();
 
 // ==================== DATA CLASSES ====================
 
@@ -87,9 +91,17 @@ class Game {
         this.prevDiscardLen = 0;
         this.initialDealPending = false;
 
-        // Networking
+        // Networking (P2P via PeerJS)
         this.gameMode = 'pve';
-        this.socket = null;
+        this.peer = null;         // our PeerJS instance
+        this.isHost = false;      // host runs the authoritative engine
+        this.engine = null;       // Crazy8Engine.HostGame (host only)
+        this.connections = {};    // host only: peerId -> DataConnection
+        this.hostConn = null;     // peer only: connection to the host
+        this.heartbeatTimer = null;
+        this.lastSeen = {};       // host only: peerId -> last-heard timestamp
+        this.lastHostSeen = 0;    // peer only: last time we heard from the host
+        this.onlineDeckCount = null;
         this.roomId = null;
         this.myPlayerId = null;
 
@@ -107,8 +119,9 @@ class Game {
             landingCreateBtn: document.getElementById('landing-create-btn'),
             landingJoinBtn: document.getElementById('landing-join-btn'),
             landingPveBtn: document.getElementById('landing-pve-btn'),
-            landingQuickMatchBtn: document.getElementById('landing-quickmatch-btn'),
             startOnlineBtn: document.getElementById('start-online-game-btn'),
+            copyRoomBtn: document.getElementById('copy-room-btn'),
+            waitingStatus: document.getElementById('waiting-status'),
             landingPlayerName: document.getElementById('landing-player-name'),
             landingPlayerCount: document.getElementById('landing-player-count'),
             landingRoomInput: document.getElementById('landing-room-input'),
@@ -142,26 +155,18 @@ class Game {
             this.startPVE(this.getPlayerCount(), this.getPlayerNameInput());
         });
 
-        // Online - Create / Join / Quick Match
+        // Online - Create room (become host) / Join a friend's room (become peer)
         dom.landingCreateBtn.addEventListener('click', () => {
-            if (!this.ensureSocketConnection()) return;
-            this.socket.emit('createRoom', { name: this.getPlayerNameInput(), maxPlayers: this.getPlayerCount() });
+            this.startAsHost(this.getPlayerCount());
         });
 
         dom.landingJoinBtn.addEventListener('click', () => {
-            if (!this.ensureSocketConnection()) return;
-            const roomId = dom.landingRoomInput.value.trim();
-            if (roomId) this.socket.emit('joinRoom', { roomId, name: this.getPlayerNameInput() });
+            this.joinAsPeer(dom.landingRoomInput.value);
         });
 
-        dom.landingQuickMatchBtn.addEventListener('click', () => {
-            if (!this.ensureSocketConnection()) return;
-            this.socket.emit('quickMatch', { name: this.getPlayerNameInput() });
-        });
+        dom.startOnlineBtn.addEventListener('click', () => this.startOnlineGame());
 
-        dom.startOnlineBtn.addEventListener('click', () => {
-            if (this.socket && this.roomId) this.socket.emit('startGame', this.roomId);
-        });
+        dom.copyRoomBtn.addEventListener('click', () => this.copyRoomCode());
 
         // Gameplay
         dom.drawPile.addEventListener('click', () => this.handleDrawClick());
@@ -172,7 +177,7 @@ class Game {
             if (this.gameMode === 'pve') {
                 this.resolveEightPVE(suit);
             } else {
-                this.socket.emit('pickSuit', { roomId: this.roomId, suit });
+                this.sendAction('pickSuit', { suit });
                 dom.suitModal.classList.add('hidden');
             }
         });
@@ -206,62 +211,258 @@ class Game {
         return this.discardPile[this.discardPile.length - 1] ?? null;
     }
 
-    // ==================== SOCKET / ONLINE ====================
+    // ==================== ONLINE (P2P via PeerJS) ====================
 
-    ensureSocketConnection() {
-        if (this.socket) return true;
-        if (window.io) { this.initSocket(); return true; }
-        alert("Online play unavailable: Cannot connect to game server.\n\nPlease check your internet connection or try again later.");
+    ensurePeerLibrary() {
+        if (window.Peer && window.Crazy8Engine) return true;
+        alert("Online play unavailable: the peer-to-peer library failed to load.\n\nCheck your internet connection and reload the page. You can still Play vs Computer.");
         return false;
     }
 
-    initSocket() {
-        console.log("Connecting to game server at:", BACKEND_URL);
-        this.socket = io(BACKEND_URL, { transports: ['websocket', 'polling'] });
+    generateRoomCode() {
+        // 5 chars, no ambiguous 0/O/1/I/L
+        const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+        let code = '';
+        for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
+        return code;
+    }
 
-        // Room events
-        this.socket.on('roomCreated', (id) => {
-            this.roomId = id;
-            this.myPlayerId = this.socket.id;
+    handlePeerError(err) {
+        console.error('PeerJS error:', err);
+        const type = err?.type;
+        if (type === 'peer-unavailable') {
+            alert(`Room "${this.roomId}" was not found.\n\nCheck the code with your host and try again.`);
+        } else if (type === 'unavailable-id') {
+            // Rare room-code collision on the broker — retry with a fresh code
+            this.showMessage('Room code taken, retrying…', 2000);
+            this.teardownPeer();
+            this.startAsHost(this.pendingMaxPlayers || this.getPlayerCount());
+        } else if (type === 'network' || type === 'server-error' || type === 'socket-error') {
+            alert('Could not reach the peer-to-peer network. Check your connection and try again.');
+        } else {
+            this.showMessage('Connection error. Please try again.', 3000);
+        }
+    }
+
+    teardownPeer() {
+        this.stopHeartbeat();
+        try { this.peer?.destroy(); } catch (_) { /* noop */ }
+        this.peer = null;
+        this.connections = {};
+        this.hostConn = null;
+        this.engine = null;
+        this.lastSeen = {};
+    }
+
+    stopHeartbeat() {
+        if (this.heartbeatTimer) {
+            clearInterval(this.heartbeatTimer);
+            this.heartbeatTimer = null;
+        }
+    }
+
+    // Host: ping each peer, and drop any that have gone silent past the timeout
+    startHostHeartbeat() {
+        this.stopHeartbeat();
+        this.heartbeatTimer = setInterval(() => {
+            const now = Date.now();
+            Object.keys(this.connections).forEach(pid => {
+                const conn = this.connections[pid];
+                if (conn && conn.open) conn.send({ type: 'heartbeat' });
+                const seen = this.lastSeen[pid] ?? now;
+                if (now - seen > PEER_TIMEOUT_MS) {
+                    delete this.connections[pid];
+                    this.lastSeen[pid] = undefined;
+                    this.engine?.removePlayer(pid);
+                }
+            });
+        }, HEARTBEAT_INTERVAL_MS);
+    }
+
+    // Peer: ping the host, and detect if the host itself goes silent
+    startPeerHeartbeat() {
+        this.stopHeartbeat();
+        this.lastHostSeen = Date.now();
+        this.heartbeatTimer = setInterval(() => {
+            if (this.hostConn && this.hostConn.open) this.hostConn.send({ type: 'heartbeat' });
+            if (Date.now() - this.lastHostSeen > PEER_TIMEOUT_MS) {
+                this.stopHeartbeat();
+                if (!this.gameOver) {
+                    this.showMessage('Host disconnected — game ended', 4000);
+                    this.showGameOver('Host disconnected', false);
+                }
+            }
+        }, HEARTBEAT_INTERVAL_MS);
+    }
+
+    // ---------- Host ----------
+
+    startAsHost(maxPlayers) {
+        if (!this.ensurePeerLibrary()) return;
+        this.teardownPeer();
+
+        this.isHost = true;
+        this.pendingMaxPlayers = maxPlayers;
+        this.roomId = this.generateRoomCode();
+        this.peer = new Peer(PEER_PREFIX + this.roomId);
+
+        this.peer.on('open', (id) => {
+            this.myPlayerId = id;
+            this.engine = new Crazy8Engine.HostGame({
+                maxPlayers,
+                send: (pid, event, data) => this.routeFromHost(pid, event, data)
+            });
+            this.engine.addPlayer(id, this.getPlayerNameInput());
+            this.startHostHeartbeat();
             this.enterWaitingRoom();
         });
 
-        this.socket.on('joinedRoom', (id) => {
-            this.roomId = id;
-            this.myPlayerId = this.socket.id;
-            this.enterWaitingRoom();
+        this.peer.on('connection', (conn) => this.setupHostConnection(conn));
+        this.peer.on('error', (err) => this.handlePeerError(err));
+    }
+
+    setupHostConnection(conn) {
+        conn.on('open', () => {
+            this.connections[conn.peer] = conn;
+            this.lastSeen[conn.peer] = Date.now();
         });
 
-        this.socket.on('playerList', (list) => {
-            this.dom.playerListDisplay.innerHTML = list
-                .map(p => `<div>${p.name} ${p.id === this.socket.id ? '(You)' : ''}</div>`)
-                .join('');
-            if (list.length >= 2 && list[0].id === this.socket.id) {
-                this.dom.startOnlineBtn.classList.remove('hidden');
+        conn.on('data', (msg) => {
+            if (!msg || typeof msg !== 'object' || !this.engine) return;
+            this.lastSeen[conn.peer] = Date.now();
+            if (msg.type === 'heartbeat') {
+                // liveness only — timestamp already refreshed above
+            } else if (msg.type === 'join') {
+                const res = this.engine.addPlayer(conn.peer, msg.name);
+                if (res.error) this.routeToPeer(conn.peer, 'error', res.error);
+            } else if (msg.type === 'action') {
+                this.engine.handleAction(conn.peer, msg.action, msg.data);
             }
         });
 
-        // Game events
-        this.socket.on('gameStarted', () => {
-            this.gameMode = 'online';
-            this.initialDealPending = true;
-            this.prevHandIds = new Set();
-            this.prevDiscardLen = 0;
-            this.dom.waitingRoomModal.classList.add('hidden');
-            this.dom.landingPage.classList.add('hidden');
+        conn.on('close', () => {
+            delete this.connections[conn.peer];
+            this.engine?.removePlayer(conn.peer);
+        });
+        conn.on('error', () => {
+            delete this.connections[conn.peer];
+            this.engine?.removePlayer(conn.peer);
+        });
+    }
+
+    // Engine 'send' callback: deliver locally if it's the host, else over WebRTC
+    routeFromHost(playerId, event, data) {
+        if (playerId === this.myPlayerId) this.handleNetworkEvent(event, data);
+        else this.routeToPeer(playerId, event, data);
+    }
+
+    routeToPeer(playerId, event, data) {
+        const conn = this.connections[playerId];
+        if (conn && conn.open) conn.send({ event, data });
+    }
+
+    startOnlineGame() {
+        if (!this.isHost || !this.engine) return;
+        const res = this.engine.startGame(this.myPlayerId);
+        if (res.error) this.showMessage(res.error, 2500);
+    }
+
+    // ---------- Peer (guest) ----------
+
+    joinAsPeer(rawCode) {
+        if (!this.ensurePeerLibrary()) return;
+        const code = (rawCode || '').trim().toLowerCase();
+        if (!code) { this.showMessage('Enter a room code first', 2000); return; }
+
+        this.teardownPeer();
+        this.isHost = false;
+        this.roomId = code;
+        this.peer = new Peer();
+
+        this.peer.on('open', () => {
+            this.myPlayerId = this.peer.id;
+            const conn = this.peer.connect(PEER_PREFIX + code, { reliable: true });
+            this.hostConn = conn;
+
+            let opened = false;
+            conn.on('open', () => {
+                opened = true;
+                conn.send({ type: 'join', name: this.getPlayerNameInput() });
+                this.startPeerHeartbeat();
+                this.enterWaitingRoom();
+            });
+            conn.on('data', (msg) => {
+                this.lastHostSeen = Date.now();
+                if (msg && msg.event) this.handleNetworkEvent(msg.event, msg.data);
+            });
+            conn.on('close', () => this.showMessage('Disconnected from host', 3000));
+            conn.on('error', () => {});
+
+            setTimeout(() => {
+                if (!opened) {
+                    alert(`Could not connect to room "${code}".\n\nMake sure the host still has the game open and the code is correct.`);
+                    this.teardownPeer();
+                }
+            }, PEER_CONNECT_TIMEOUT_MS);
         });
 
-        this.socket.on('gameState', (state) => this.syncState(state));
+        this.peer.on('error', (err) => this.handlePeerError(err));
+    }
 
-        this.socket.on('gameOver', ({ winner, reason }) => {
-            const message = reason ? `${winner} Wins! (${reason})` : `${winner} Wins!`;
-            const iWon = this.getMyPlayer()?.name === winner;
-            this.showGameOver(iWon ? `🎉 ${message} 🎉` : message, iWon);
-        });
+    // ---------- Shared ----------
 
-        // Disconnect events
-        this.socket.on('playerDisconnected', ({ name }) => this.showMessage(`${name} disconnected`));
-        this.socket.on('playerLeft', ({ name }) => this.showMessage(`${name} left the room`));
+    // Both host (locally) and peers (over the wire) funnel events through here
+    handleNetworkEvent(event, data) {
+        switch (event) {
+            case 'playerList': return this.renderPlayerList(data);
+            case 'gameStarted': return this.onGameStarted();
+            case 'gameState': return this.syncState(data);
+            case 'gameOver': return this.onGameOver(data);
+            case 'playerDisconnected': return this.showMessage(`${data.name} disconnected`);
+            case 'playerLeft': return this.showMessage(`${data.name} left the room`);
+            case 'error': return this.showMessage(typeof data === 'string' ? data : 'Error', 3000);
+        }
+    }
+
+    sendAction(action, data = {}) {
+        if (this.isHost) {
+            this.engine?.handleAction(this.myPlayerId, action, data);
+        } else if (this.hostConn && this.hostConn.open) {
+            this.hostConn.send({ type: 'action', action, data });
+        }
+    }
+
+    renderPlayerList(list) {
+        this.dom.playerListDisplay.innerHTML = list
+            .map(p => `<div>${this.escapeHtml(p.name)}${p.id === this.myPlayerId ? ' <span class="you-tag">(You)</span>' : ''}</div>`)
+            .join('');
+
+        if (this.isHost) {
+            const ready = list.length >= 2;
+            this.dom.startOnlineBtn.classList.toggle('hidden', !ready);
+            this.dom.waitingStatus.textContent = ready
+                ? 'Ready! Start when everyone has joined.'
+                : 'Waiting for players to join…';
+        } else {
+            this.dom.startOnlineBtn.classList.add('hidden');
+            this.dom.waitingStatus.textContent = 'Waiting for the host to start…';
+        }
+    }
+
+    onGameStarted() {
+        this.gameMode = 'online';
+        this.gameOver = false;
+        this.initialDealPending = true;
+        this.prevHandIds = new Set();
+        this.prevDiscardLen = 0;
+        this.dom.waitingRoomModal.classList.add('hidden');
+        this.dom.landingPage.classList.add('hidden');
+    }
+
+    onGameOver({ winner, reason }) {
+        const message = reason ? `${winner} Wins! (${reason})` : `${winner} Wins!`;
+        const iWon = this.getMyPlayer()?.name === winner;
+        this.showGameOver(iWon ? `🎉 ${message} 🎉` : message, iWon);
     }
 
     enterWaitingRoom() {
@@ -270,17 +471,27 @@ class Game {
         this.dom.displayRoomId.textContent = this.roomId;
     }
 
+    copyRoomCode() {
+        if (!this.roomId) return;
+        const done = () => this.showMessage('Room code copied!', 1500);
+        if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(this.roomId).then(done).catch(() => {});
+        }
+    }
+
+    escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
     syncState(state) {
         const myIndex = state.myIndex ?? state.players.findIndex(p => p.id === this.myPlayerId);
 
-        this.players = state.players.map((p, i) => {
+        this.players = state.players.map((p) => {
             const player = new Player(p.name, 'online', p.id);
             player.handCount = p.handCount || 0;
-
             if (p.hand?.length > 0) {
                 player.hand = p.hand.map(c => new Card(c.suit, c.rank));
-            } else if (i === myIndex && state.myHand) {
-                player.hand = state.myHand.map(c => new Card(c.suit, c.rank));
             }
             return player;
         });
@@ -289,6 +500,7 @@ class Game {
         this.currentTurn = state.currentTurn;
         this.gameForcedSuit = state.gameForcedSuit;
         this.drawPenalty = state.drawPenalty;
+        this.onlineDeckCount = state.deckCount ?? null;
 
         // Show suit picker if it's my turn and top card is an 8 awaiting suit choice
         const top = this.getTopCard();
@@ -430,14 +642,14 @@ class Game {
     }
 
     renderDeckCount() {
-        const count = this.gameMode === 'pve' ? this.deck.cards.length : '?';
+        const count = this.gameMode === 'pve' ? this.deck.cards.length : this.onlineDeckCount;
         let label = this.dom.drawPile.querySelector('.deck-count-label');
         if (!label) {
             label = document.createElement('div');
             label.className = 'deck-count-label';
             this.dom.drawPile.appendChild(label);
         }
-        label.textContent = this.gameMode === 'pve' ? `${count}` : '';
+        label.textContent = (count === null || count === undefined) ? '' : `${count}`;
     }
 
     highlightPlayableCards() {
@@ -614,7 +826,7 @@ class Game {
                 this.showMessage("Wait for your turn!", 1200);
                 return;
             }
-            this.animateDrawCard(() => this.socket.emit('drawCard', this.roomId));
+            this.animateDrawCard(() => this.sendAction('drawCard'));
         }
     }
 
@@ -635,7 +847,7 @@ class Game {
                 return;
             }
             this.animatePlayCard(this.dom.playerHand.children[index], () => {
-                this.socket.emit('playCard', { roomId: this.roomId, cardIndex: index });
+                this.sendAction('playCard', { cardIndex: index });
             });
         }
     }

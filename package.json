@@ -1,29 +1,21 @@
 {
   "name": "crazy-8",
-  "version": "2.9.0",
-  "main": "server.js",
+  "version": "3.0.0",
+  "main": "serve.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
+    "start": "node serve.js",
     "test": "node test-game.js"
   },
   "keywords": [
     "card-game",
     "crazy-8s",
     "multiplayer",
-    "socket.io"
+    "webrtc",
+    "peerjs"
   ],
   "author": "Malungisa Mndzebele",
   "license": "ISC",
-  "description": "A modern multiplayer Crazy 8s card game with real-time online play",
-  "dependencies": {
-    "dotenv": "^17.2.3",
-    "express": "^5.2.1",
-    "pg": "^8.16.3",
-    "sequelize": "^6.37.7",
-    "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3"
-  },
+  "description": "A modern serverless Crazy 8s card game — play vs computer or peer-to-peer online with friends, no backend required",
   "engines": {
     "node": ">=18.0.0"
   }

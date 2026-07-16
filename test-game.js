@@ -1,46 +1,18 @@
 /**
- * Crazy 8s — Full Test Suite
- * 
+ * Crazy 8s — Full Test Suite (serverless / P2P)
+ *
  * Tests:
  * 1. Unit validation (card rules, deck, turns, dealing)
  * 2. Full PvE game simulations (2-7 players)
- * 3. Socket.IO multiplayer flow (create/join/play/draw/win/disconnect)
- * 
+ * 3. Host-authoritative engine (game-engine.js): lobby, dealing, anti-cheat,
+ *    full multiplayer game to completion, disconnect handling, validation.
+ *
+ * No network or server needed — the engine runs in-process.
+ *
  * Run: node test-game.js
  */
 
-const { io: ioClient } = require('socket.io-client');
-const { spawn } = require('child_process');
-const net = require('net');
-
-// ==================== LOCAL SERVER BOOTSTRAP ====================
-const SERVER_PORT = 3001;
-
-function isServerUp(port) {
-    return new Promise((res) => {
-        const sock = net.createConnection({ port, host: '127.0.0.1' });
-        sock.once('connect', () => { sock.destroy(); res(true); });
-        sock.once('error', () => res(false));
-        sock.setTimeout(1000, () => { sock.destroy(); res(false); });
-    });
-}
-
-/** Starts server.js as a child process if nothing is listening on the test port. */
-async function ensureServer() {
-    if (await isServerUp(SERVER_PORT)) return null;
-    console.log('  ⏳ No server on port ' + SERVER_PORT + ' — starting one for multiplayer tests...');
-    const child = spawn(process.execPath, ['server.js'], {
-        cwd: __dirname,
-        env: { ...process.env, PORT: String(SERVER_PORT), NODE_ENV: 'test' },
-        stdio: 'ignore'
-    });
-    for (let i = 0; i < 30; i++) {
-        await new Promise(r => setTimeout(r, 500));
-        if (await isServerUp(SERVER_PORT)) { console.log('  ✅ Test server ready'); return child; }
-    }
-    child.kill();
-    throw new Error('Could not start local server for multiplayer tests');
-}
+const Engine = require('./game-engine.js');
 
 // ==================== SHARED CONSTANTS ====================
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
@@ -281,263 +253,160 @@ function runPveTests() {
     assert(completed === total, `All ${total} PvE games completed correctly`);
 }
 
-// ==================== 3. SOCKET.IO MULTIPLAYER TESTS ====================
-function runMultiplayerTests() {
-    return new Promise(async (resolve) => {
-        section('SOCKET.IO MULTIPLAYER TESTS');
+// ==================== 3. HOST ENGINE (P2P) TESTS ====================
 
-        const SERVER_URL = 'http://localhost:3001';
-        const sockets = [];
-        const cleanup = () => sockets.forEach(s => s.disconnect());
+/**
+ * Test harness around game-engine.js HostGame. Captures every message the
+ * engine tries to send, and mirrors each player's latest gameState — exactly
+ * what a real peer's browser would hold.
+ */
+function makeHarness(maxPlayers) {
+    const state = {};   // playerId -> latest gameState received
+    const over = {};    // playerId -> gameOver payload
+    const list = { latest: null };
 
-        const connect = (name = 'Tester') => {
-            return new Promise((res, rej) => {
-                const s = ioClient(SERVER_URL, { transports: ['websocket'], forceNew: true });
-                sockets.push(s);
-                s.on('connect', () => res(s));
-                s.on('connect_error', (err) => rej(err));
-                setTimeout(() => rej(new Error('Connection timeout')), 5000);
-            });
-        };
-
-        const waitForEvent = (socket, event, timeout = 5000) => {
-            return new Promise((res, rej) => {
-                const timer = setTimeout(() => rej(new Error(`Timeout waiting for '${event}'`)), timeout);
-                socket.once(event, (data) => { clearTimeout(timer); res(data); });
-            });
-        };
-
-        try {
-            // --- Test: Connect two players ---
-            const p1 = await connect('Player1');
-            const p2 = await connect('Player2');
-            assert(p1.connected && p2.connected, 'Both players connected to server');
-
-            // --- Test: Create room ---
-            const roomCreatedPromise = waitForEvent(p1, 'roomCreated');
-            p1.emit('createRoom', { name: 'Player1', maxPlayers: 2 });
-            const roomId = await roomCreatedPromise;
-            assert(typeof roomId === 'string' && roomId.length > 0, `Room created: ${roomId}`);
-
-            // --- Test: Join room ---
-            const joinedPromise = waitForEvent(p2, 'joinedRoom');
-            // Wait for the playerList that has 2 players (ignore the initial 1-player list from create)
-            const playerListPromise = new Promise((res) => {
-                const handler = (data) => {
-                    if (data.length >= 2) { p1.off('playerList', handler); res(data); }
-                };
-                p1.on('playerList', handler);
-            });
-            p2.emit('joinRoom', { roomId, name: 'Player2' });
-            const joinedRoomId = await joinedPromise;
-            assert(joinedRoomId === roomId, 'Player2 joined the correct room');
-            const playerList = await playerListPromise;
-            assert(playerList.length === 2, `Room has 2 players: ${playerList.map(p => p.name).join(', ')}`);
-
-            // --- Test: Start game ---
-            const gameStartP1 = waitForEvent(p1, 'gameStarted');
-            const gameStartP2 = waitForEvent(p2, 'gameStarted');
-            const stateP1 = waitForEvent(p1, 'gameState');
-            const stateP2 = waitForEvent(p2, 'gameState');
-            p1.emit('startGame', roomId);
-            await gameStartP1;
-            await gameStartP2;
-            assert(true, 'Game started for both players');
-
-            const state1 = await stateP1;
-            const state2 = await stateP2;
-            assert(state1.discardPile.length >= 1, `Initial discard pile has ${state1.discardPile.length} card(s)`);
-            assert(state1.players.length === 2, 'State has 2 players');
-
-            // Find which player's hand we can see
-            const myIdx1 = state1.myIndex;
-            const myHand1 = state1.players[myIdx1].hand;
-            assert(myHand1 && myHand1.length === 7, `Player1 dealt 7 cards (got ${myHand1?.length})`);
-
-            const myIdx2 = state2.myIndex;
-            const myHand2 = state2.players[myIdx2].hand;
-            assert(myHand2 && myHand2.length === 7, `Player2 dealt 7 cards (got ${myHand2?.length})`);
-
-            // Verify anti-cheat: player can't see other's hand
-            const otherIdx1 = myIdx1 === 0 ? 1 : 0;
-            assert(!state1.players[otherIdx1].hand, 'Anti-cheat: P1 cannot see P2 hand');
-
-            // --- Test: Play cards until game over ---
-            let gameOverResult = null;
-            let turnCount = 0;
-            const maxTurns = 200;
-
-            const playTurn = () => {
-                return new Promise(async (resolveTurn) => {
-                    // Get fresh state for both players
-                    const getState = (socket) => waitForEvent(socket, 'gameState', 8000);
-
-                    // Determine current player
-                    const currentSocket = state1.currentTurn === myIdx1 ? p1 : p2;
-                    const currentIdx = currentSocket === p1 ? myIdx1 : myIdx2;
-
-                    // We need to wait for gameState after each action
-                    const statePromise1 = getState(p1);
-                    const statePromise2 = getState(p2);
-
-                    // Try draw (simplest action that always works)
-                    currentSocket.emit('drawCard', roomId);
-
-                    const newState1 = await statePromise1;
-                    const newState2 = await statePromise2;
-
-                    // Update our tracking
-                    Object.assign(state1, newState1);
-                    Object.assign(state2, newState2);
-
-                    resolveTurn();
-                });
-            };
-
-            // Set up game-over listener
-            const gameOverP1 = waitForEvent(p1, 'gameOver', 120000);
-            const gameOverP2 = waitForEvent(p2, 'gameOver', 120000);
-
-            // Play by repeatedly having the current player try to play or draw
-            const playLoop = async () => {
-                while (turnCount < maxTurns && !gameOverResult) {
-                    turnCount++;
-
-                    // Get current player
-                    const currentSocket = state1.currentTurn === myIdx1 ? p1 : p2;
-                    const currentState = currentSocket === p1 ? state1 : state2;
-                    const currentMyIdx = currentSocket === p1 ? myIdx1 : myIdx2;
-                    const myHand = currentState.players[currentMyIdx].hand;
-
-                    if (!myHand || myHand.length === 0) break;
-
-                    // Try to find a valid card
-                    const top = currentState.discardPile[currentState.discardPile.length - 1];
-                    const effectiveSuit = currentState.gameForcedSuit || top.suit;
-                    let validIdx = -1;
-
-                    if (currentState.drawPenalty > 0) {
-                        validIdx = myHand.findIndex(c => c.rank === '2');
-                    } else {
-                        validIdx = myHand.findIndex(c => c.rank === '8' || c.suit === effectiveSuit || c.rank === top.rank);
-                    }
-
-                    const stateP1Next = waitForEvent(p1, 'gameState', 8000).catch(() => null);
-                    const stateP2Next = waitForEvent(p2, 'gameState', 8000).catch(() => null);
-
-                    if (validIdx >= 0) {
-                        currentSocket.emit('playCard', { roomId, cardIndex: validIdx });
-                    } else {
-                        currentSocket.emit('drawCard', roomId);
-                    }
-
-                    const ns1 = await stateP1Next;
-                    const ns2 = await stateP2Next;
-
-                    if (ns1) Object.assign(state1, ns1);
-                    if (ns2) Object.assign(state2, ns2);
-
-                    // Check if 8 was played and needs suit pick
-                    if (ns1 && !ns1.gameForcedSuit) {
-                        const newTop = ns1.discardPile[ns1.discardPile.length - 1];
-                        if (newTop?.rank === '8') {
-                            const picker = ns1.currentTurn === myIdx1 ? p1 : p2;
-                            const suitPromise1 = waitForEvent(p1, 'gameState', 5000).catch(() => null);
-                            const suitPromise2 = waitForEvent(p2, 'gameState', 5000).catch(() => null);
-                            picker.emit('pickSuit', { roomId, suit: 'hearts' });
-                            const ss1 = await suitPromise1;
-                            const ss2 = await suitPromise2;
-                            if (ss1) Object.assign(state1, ss1);
-                            if (ss2) Object.assign(state2, ss2);
-                        }
-                    }
-                }
-            };
-
-            // Race between play loop and game over event
-            const loopPromise = playLoop();
-            gameOverResult = await Promise.race([
-                gameOverP1,
-                loopPromise.then(() => null)
-            ]);
-
-            if (!gameOverResult) {
-                // Wait a bit more for game over event
-                gameOverResult = await Promise.race([
-                    gameOverP1.catch(() => null),
-                    new Promise(res => setTimeout(() => res(null), 3000))
-                ]);
-            }
-
-            if (gameOverResult) {
-                assert(true, `Game completed! Winner: ${gameOverResult.winner} (${turnCount} turns)`);
-            } else {
-                assert(turnCount < maxTurns, `Game progressed ${turnCount} turns (may not have finished)`);
-            }
-
-            // --- Test: Disconnect handling ---
-            const p3 = await connect('Player3');
-            const p4 = await connect('Player4');
-
-            const room2Promise = waitForEvent(p3, 'roomCreated');
-            p3.emit('createRoom', { name: 'Player3', maxPlayers: 2 });
-            const room2 = await room2Promise;
-
-            const join2Promise = waitForEvent(p4, 'joinedRoom');
-            p4.emit('joinRoom', { roomId: room2, name: 'Player4' });
-            await join2Promise;
-
-            // Start second game
-            const gs3 = waitForEvent(p3, 'gameStarted');
-            const gs4 = waitForEvent(p4, 'gameStarted');
-            p3.emit('startGame', room2);
-            await gs3;
-            await gs4;
-            assert(true, 'Second game started for disconnect test');
-
-            // Disconnect p4 → p3 should win
-            const disconnectWin = waitForEvent(p3, 'gameOver', 5000);
-            p4.disconnect();
-            const dcResult = await disconnectWin.catch(() => null);
-            if (dcResult) {
-                assert(dcResult.winner === 'Player3', `Disconnect win: ${dcResult.winner} (reason: ${dcResult.reason})`);
-            } else {
-                assert(false, 'Should have received gameOver on opponent disconnect');
-            }
-
-            // --- Test: Join non-existent room ---
-            const p5 = await connect('Player5');
-            const errorPromise = waitForEvent(p5, 'error', 3000);
-            p5.emit('joinRoom', { roomId: 'NONEXISTENT', name: 'Player5' });
-            const errMsg = await errorPromise.catch(() => null);
-            assert(errMsg === 'Room not found', `Error on invalid room: "${errMsg}"`);
-
-            cleanup();
-            resolve();
-        } catch (err) {
-            console.log(`  ❌ MULTIPLAYER ERROR: ${err.message}`);
-            totalFailed++;
-            cleanup();
-            resolve();
+    const host = new Engine.HostGame({
+        maxPlayers,
+        send: (pid, event, data) => {
+            if (event === 'gameState') state[pid] = data;
+            else if (event === 'gameOver') over[pid] = data;
+            else if (event === 'playerList') list.latest = data;
         }
     });
+    return { host, state, over, list };
+}
+
+/** Drives a started HostGame to completion using simple valid-move logic. */
+function playToCompletion(host, state, ids, maxTurns = 300) {
+    let turns = 0;
+    while (!host.gameOver && turns < maxTurns) {
+        turns++;
+        const curId = ids[host.currentTurn];
+        const st = state[curId];
+        if (!st) break;
+        const myHand = st.players[st.myIndex].hand;
+        const top = st.discardPile[st.discardPile.length - 1];
+        const effectiveSuit = st.gameForcedSuit || top.suit;
+
+        let idx = -1;
+        if (st.drawPenalty > 0) idx = myHand.findIndex(c => c.rank === '2');
+        else idx = myHand.findIndex(c => c.rank === '8' || c.suit === effectiveSuit || c.rank === top.rank);
+
+        if (idx >= 0) {
+            const card = myHand[idx];
+            host.handleAction(curId, 'playCard', { cardIndex: idx });
+            // If we just played an 8 and still hold the turn, pick a suit
+            if (!host.gameOver && card.rank === '8' && host.players[host.currentTurn].id === curId) {
+                host.handleAction(curId, 'pickSuit', { suit: 'hearts' });
+            }
+        } else {
+            host.handleAction(curId, 'drawCard', {});
+        }
+    }
+    return turns;
+}
+
+function runEngineTests() {
+    section('HOST ENGINE (P2P) TESTS');
+
+    // --- Lobby: create + join ---
+    const h1 = makeHarness(2);
+    h1.host.addPlayer('p1', 'Alice');
+    assert(h1.list.latest?.length === 1, 'Host creates room with 1 player');
+    h1.host.addPlayer('p2', 'Bob');
+    assert(h1.list.latest?.length === 2, `Second player joins (${h1.list.latest.map(p => p.name).join(', ')})`);
+
+    // --- Room full is enforced ---
+    const full = h1.host.addPlayer('p3', 'Carol');
+    assert(full.error === 'Room is full', 'Room capacity enforced');
+
+    // --- Cannot start with too few players ---
+    const solo = makeHarness(4);
+    solo.host.addPlayer('s1', 'Solo');
+    const tooFew = solo.host.startGame('s1');
+    assert(!!tooFew.error, `Cannot start with 1 player (${tooFew.error})`);
+
+    // --- Only host can start ---
+    const notHost = h1.host.startGame('p2');
+    assert(!!notHost.error, 'Only host can start the game');
+
+    // --- Start game deals correctly ---
+    const startRes = h1.host.startGame('p1');
+    assert(startRes.ok === true, 'Host starts the game');
+    assert(h1.host.discardPile.length === 1, 'Initial discard pile has 1 card');
+    assert(!Engine.SPECIAL_CARDS.includes(h1.host.discardPile[0].rank), 'Starting card is not special');
+    assert(h1.state.p1.players[h1.state.p1.myIndex].hand.length === 7, '2-player: host dealt 7 cards');
+    assert(h1.state.p2.players[h1.state.p2.myIndex].hand.length === 7, '2-player: peer dealt 7 cards');
+
+    // --- Anti-cheat: a player never receives another player's hand ---
+    const p1View = h1.state.p1;
+    const otherIdx = p1View.myIndex === 0 ? 1 : 0;
+    assert(p1View.players[otherIdx].hand === undefined, 'Anti-cheat: host cannot see peer hand');
+    assert(p1View.players[otherIdx].handCount === 7, 'Opponent hand count still visible (7)');
+
+    // --- Invalid actions are ignored ---
+    const notYourTurnId = h1.host.players[(h1.host.currentTurn + 1) % 2].id;
+    const beforeTop = h1.host.discardPile.length;
+    h1.host.handleAction(notYourTurnId, 'drawCard', {});
+    assert(h1.host.discardPile.length === beforeTop, 'Out-of-turn action ignored');
+
+    const curId0 = h1.host.players[h1.host.currentTurn].id;
+    const handLenBefore = h1.host.players[h1.host.currentTurn].hand.length;
+    h1.host.handleAction(curId0, 'playCard', { cardIndex: 999 });
+    assert(h1.host.players[h1.host.currentTurn].hand.length === handLenBefore, 'Invalid card index ignored');
+
+    // --- Full 2-player game to completion ---
+    const turns = playToCompletion(h1.host, h1.state, ['p1', 'p2']);
+    assert(h1.host.gameOver, `2-player game reaches game over (${turns} turns)`);
+    const winnerP = h1.host.players.find(p => p.hand.length === 0);
+    assert(!!winnerP, 'Winner has an empty hand');
+    assert(!!(h1.over.p1 || h1.over.p2), `gameOver broadcast (winner: ${(h1.over.p1 || h1.over.p2)?.winner})`);
+
+    // --- Card conservation across a full game ---
+    let cardTotal = h1.host.deck.cards.length + h1.host.discardPile.length;
+    h1.host.players.forEach(p => cardTotal += p.hand.length);
+    assert(cardTotal === 52, `All 52 cards accounted for (got ${cardTotal})`);
+
+    // --- 4-player deal (5 cards each) ---
+    const h4 = makeHarness(4);
+    ['a', 'b', 'c', 'd'].forEach((id, i) => h4.host.addPlayer(id, 'P' + i));
+    h4.host.startGame('a');
+    const all5 = ['a', 'b', 'c', 'd'].every(id => h4.state[id].players[h4.state[id].myIndex].hand.length === 5);
+    assert(all5, '4-player: everyone dealt 5 cards');
+    const t4 = playToCompletion(h4.host, h4.state, ['a', 'b', 'c', 'd']);
+    assert(h4.host.gameOver, `4-player game reaches game over (${t4} turns)`);
+
+    // --- Disconnect handling: opponent leaves mid-game → remaining player wins ---
+    const hd = makeHarness(2);
+    hd.host.addPlayer('x', 'Xavier');
+    hd.host.addPlayer('y', 'Yolanda');
+    hd.host.startGame('x');
+    hd.host.removePlayer('y');
+    assert(hd.host.gameOver, 'Game ends when only one player remains');
+    assert(hd.over.x?.winner === 'Xavier', `Remaining player wins on disconnect (${hd.over.x?.winner})`);
+    assert(/disconnect/i.test(hd.over.x?.reason || ''), `Win reason cites disconnect ("${hd.over.x?.reason}")`);
+
+    // --- Lobby disconnect (before game start) just removes the player ---
+    const hl = makeHarness(3);
+    hl.host.addPlayer('m', 'Mia');
+    hl.host.addPlayer('n', 'Noah');
+    hl.host.removePlayer('n');
+    assert(hl.list.latest.length === 1, 'Leaving the lobby pre-game removes the player');
+    assert(!hl.host.gameOver, 'Lobby leave does not end a non-started game');
+
+    // --- Name sanitization ---
+    assert(Engine.sanitizeName('<script>Bob') === 'Bob', 'Name sanitization strips HTML tags');
+    assert(Engine.sanitizeName('Bob<b>!!') === 'Bob', 'Name sanitization strips tags and symbols');
+    assert(Engine.sanitizeName('') === 'Player', 'Empty name falls back to "Player"');
 }
 
 // ==================== MAIN ====================
 async function main() {
-    console.log('🎴 Crazy 8s — Full Test Suite\n');
+    console.log('🎴 Crazy 8s — Full Test Suite (serverless / P2P)\n');
 
     runUnitTests();
     runPveTests();
-
-    let serverProc = null;
-    try {
-        serverProc = await ensureServer();
-    } catch (err) {
-        console.log(`  ⚠️ ${err.message}`);
-    }
-    await runMultiplayerTests();
-    if (serverProc) serverProc.kill();
+    runEngineTests();
 
     section('FINAL RESULTS');
     console.log(`  Passed: ${totalPassed}`);
